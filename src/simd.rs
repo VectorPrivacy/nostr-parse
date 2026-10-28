@@ -155,7 +155,7 @@ static NIBBLE: [u8; 256] = {
 /// multiple of 16 (an id or key is 32 bytes, a signature 64).
 #[inline(always)]
 pub fn decode_hex(src: &[u8], out: &mut [u8]) -> bool {
-    debug_assert!(out.len().is_multiple_of(16));
+    debug_assert!(out.len() % 16 == 0);
     let src = &src[..out.len() * 2];
     #[cfg(target_arch = "aarch64")]
     {
