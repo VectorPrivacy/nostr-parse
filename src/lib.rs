@@ -119,7 +119,8 @@ impl<'a> Tag<'a> {
         self.get(0)
     }
 
-    pub fn iter(&self) -> impl ExactSizeIterator<Item = &'a str> + 'a {
+    /// The fields, borrowing the event rather than this `Tag`.
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = &'a str> + use<'a> {
         let tag = *self;
         (0..tag.len()).map(move |j| tag.get(j).expect("j < len"))
     }
