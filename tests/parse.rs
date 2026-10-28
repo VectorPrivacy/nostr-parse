@@ -1,4 +1,4 @@
-use nostr_parse::{CompactEvent, Event, encode_hex, parse, parse_compact};
+use nostr_parse::{CompactEvent, Event, Parser, encode_hex, parse, parse_compact};
 
 const ID: &str = "4376c65d2f232afbe9b882a35baa4f6fe8667c4e684749af565f981833ed6a65";
 const PK: &str = "6e468422dfb74a5738702a8823b9b28168abab8655faacb6853cd0ee15deee93";
@@ -10,7 +10,7 @@ fn event(tags: &str, content: &str, sig: &str) -> String {
 
 /// A compact event as the list-of-strings one, to compare with it.
 fn lists(e: CompactEvent) -> Event {
-    Event { id: e.id, pubkey: e.pubkey, created_at: e.created_at, kind: e.kind, tags: e.tags.to_vecs(), content: e.content, sig: e.sig }
+    e.to_event()
 }
 
 /// The event serde_json reads from the same text, field by field.
@@ -157,7 +157,8 @@ fn escapes_at_every_offset_match_serde_json() {
 #[test]
 fn compact_tags_read_back() {
     let json = event(r#"[["e","abc"],[],["",""],["t","caf\u00e9 \ud83c\udf89"],["p"]]"#, r#""x""#, SIG);
-    let tags = parse_compact(&json).unwrap().tags;
+    let ev = parse_compact(&json).unwrap();
+    let tags = ev.tags();
     assert_eq!(tags.len(), 5);
     let all: Vec<Vec<&str>> = tags.iter().map(|t| t.iter().collect()).collect();
     assert_eq!(all, vec![vec!["e", "abc"], vec![], vec!["", ""], vec!["t", "café 🎉"], vec!["p"]]);
@@ -166,6 +167,26 @@ fn compact_tags_read_back() {
     assert!(tags.get(1).unwrap().is_empty() && tags.get(1).unwrap().name().is_none());
     assert!(tags.get(5).is_none());
     assert_eq!(format!("{tags:?}"), r#"[["e", "abc"], [], ["", ""], ["t", "café 🎉"], ["p"]]"#);
-    let none = parse_compact(&event("[]", r#""x""#, SIG)).unwrap().tags;
-    assert!(none.is_empty() && none.iter().next().is_none());
+    let bare = parse_compact(&event("[]", r#""x""#, SIG)).unwrap();
+    assert!(bare.tags().is_empty() && bare.tags().iter().next().is_none() && bare.content() == "x");
+    let empty = parse_compact(&event("[]", r#""""#, SIG)).unwrap();
+    assert!(empty.tags().is_empty() && empty.content().is_empty());
+}
+
+/// One `Parser` across events: nothing of one event's tags or content leaks
+/// into the next, and an escaped key read after escaped content (only the
+/// general path does that) leaves the content alone.
+#[test]
+fn a_parser_reused_keeps_events_apart() {
+    let mut p = Parser::new();
+    let with = event(r#"[["e","abc"],["p","def"]]"#, r#""line\none""#, SIG);
+    let without = event("[]", r#""plain""#, SIG);
+    let content_then_key = format!(r#"{{"id":"{ID}","pubkey":"{PK}","created_at":1,"kind":1,"content":"a\"b","tags":[["t","x"]],"sig":"{SIG}"}}"#);
+    for json in [&with, &without, &content_then_key, &with, &without] {
+        assert_eq!(p.parse_compact(json).unwrap().to_event(), reference(json), "{json}");
+        assert_eq!(p.parse(json).unwrap(), reference(json), "{json}");
+    }
+    // A failed parse (an error after the tags) leaves nothing behind either.
+    assert!(p.parse_compact(&event(r#"[["e","stale"]]"#, "1", SIG)).is_err());
+    assert_eq!(p.parse_compact(&without).unwrap().to_event(), reference(&without));
 }

@@ -22,7 +22,7 @@ fn main() {
         for &l in &lines {
             sink = sink.wrapping_add(if compact {
                 let ev = p.parse_compact(black_box(l)).expect("a valid event");
-                ev.kind as usize + ev.tags.len() + ev.content.len()
+                ev.kind as usize + ev.tags().len() + ev.content().len()
             } else {
                 let ev = p.parse(black_box(l)).expect("a valid event");
                 ev.kind as usize + ev.tags.len() + ev.content.len()

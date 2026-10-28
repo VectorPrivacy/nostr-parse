@@ -13,8 +13,8 @@
 //!
 //! Two shapes of the same event: [`Event`] keeps tags as `Vec<Vec<String>>`, what
 //! other Nostr libraries hold (rust-nostr's `Tag` is that list); [`CompactEvent`]
-//! keeps every tag's text in one buffer with one index beside it ([`Tags`]), so
-//! an event costs at most three allocations however many tags it has.
+//! keeps its content, every tag's text and their index in one heap block, so an
+//! event costs one allocation however many tags it has.
 
 mod simd;
 
@@ -22,96 +22,165 @@ use std::fmt;
 
 pub use simd::encode_hex;
 
-/// A Nostr event that owns its data. `T` is how it keeps its tags: lists of
-/// `String`s by default, or [`Tags`] for a [`CompactEvent`].
+/// A Nostr event that owns its data.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct Event<T = Vec<Vec<String>>> {
+pub struct Event {
     pub id: [u8; 32],
     pub pubkey: [u8; 32],
     pub created_at: u64,
     pub kind: u16,
-    pub tags: T,
+    pub tags: Vec<Vec<String>>,
     pub content: String,
     /// `None` for an unsigned event, whose sig is `""`.
     pub sig: Option<[u8; 64]>,
 }
 
-/// An event whose tags' text is all in one buffer: see [`Tags`].
-pub type CompactEvent = Event<Tags>;
-
-/// Tags as lists of strings, their text kept in one buffer (every field back to
-/// back, fully unescaped) with one index of where each field and each tag ends:
-/// two allocations for any number of tags, against one per tag and one per
-/// field for `Vec<Vec<String>>`.
-#[derive(Clone, Default, PartialEq, Eq)]
-pub struct Tags {
-    text: Box<str>,
-    /// `ntags` tag ends (each a count of fields so far), then each field's end in `text`.
-    index: Box<[u32]>,
-    ntags: u32,
+/// A Nostr event whose content and tags live in one heap block: one allocation
+/// however many tags it has (none for an event with no content and no tags),
+/// read through [`Self::content`] and [`Self::tags`].
+#[derive(Clone, PartialEq, Eq, Default)]
+pub struct CompactEvent {
+    pub id: [u8; 32],
+    pub pubkey: [u8; 32],
+    pub created_at: u64,
+    pub kind: u16,
+    /// `None` for an unsigned event, whose sig is `""`.
+    pub sig: Option<[u8; 64]>,
+    /// Empty, or: three `u32`s (content length, tag count, field count); the
+    /// index, each tag's end as a count of fields so far and then each field's
+    /// end in the tag text; the content; the tag text (every field back to back).
+    body: Box<[u8]>,
 }
 
-impl Tags {
+/// Bytes before a [`CompactEvent`] body's index.
+const HEAD: usize = 12;
+
+/// The `k`th `u32` of a body: its header, then its index.
+#[inline(always)]
+fn word(body: &[u8], k: usize) -> usize {
+    u32::from_ne_bytes(body[4 * k..4 * k + 4].try_into().expect("4 bytes")) as usize
+}
+
+impl CompactEvent {
+    /// `(content length, tags, fields)`.
+    fn counts(&self) -> (usize, usize, usize) {
+        if self.body.is_empty() { (0, 0, 0) } else { (word(&self.body, 0), word(&self.body, 1), word(&self.body, 2)) }
+    }
+
+    pub fn content(&self) -> &str {
+        let (len, tags, fields) = self.counts();
+        let at = HEAD + 4 * (tags + fields);
+        // SAFETY: the parser wrote whole UTF-8 there.
+        unsafe { std::str::from_utf8_unchecked(self.body.get(at..at + len).unwrap_or_default()) }
+    }
+
+    pub fn tags(&self) -> Tags<'_> {
+        let (len, tags, fields) = self.counts();
+        Tags { body: &self.body, tags, text_at: HEAD + 4 * (tags + fields) + len }
+    }
+
+    /// The same event with its tags as owned lists.
+    pub fn to_event(&self) -> Event {
+        Event { id: self.id, pubkey: self.pubkey, created_at: self.created_at, kind: self.kind, tags: self.tags().to_vecs(), content: self.content().to_owned(), sig: self.sig }
+    }
+}
+
+impl fmt::Debug for CompactEvent {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let hex = |b: &[u8]| {
+            let mut s = String::new();
+            encode_hex(b, &mut s);
+            s
+        };
+        f.debug_struct("CompactEvent")
+            .field("id", &hex(&self.id))
+            .field("pubkey", &hex(&self.pubkey))
+            .field("created_at", &self.created_at)
+            .field("kind", &self.kind)
+            .field("tags", &self.tags())
+            .field("content", &self.content())
+            .field("sig", &self.sig.map(|s| hex(&s)))
+            .finish()
+    }
+}
+
+/// A [`CompactEvent`]'s tags: lists of `&str` read from its body.
+#[derive(Clone, Copy)]
+pub struct Tags<'a> {
+    body: &'a [u8],
+    tags: usize,
+    /// Where the tag text starts in `body`.
+    text_at: usize,
+}
+
+impl<'a> Tags<'a> {
     /// How many tags.
     pub fn len(&self) -> usize {
-        self.ntags as usize
+        self.tags
     }
 
     pub fn is_empty(&self) -> bool {
-        self.ntags == 0
+        self.tags == 0
     }
 
     /// Tag `i`.
-    pub fn get(&self, i: usize) -> Option<Tag<'_>> {
-        let (tag_ends, field_ends) = self.index.split_at(self.len());
-        let last = *tag_ends.get(i)? as usize;
-        let first = if i == 0 { 0 } else { tag_ends[i - 1] as usize };
-        let start = if first == 0 { 0 } else { field_ends[first - 1] };
-        Some(Tag { text: &self.text, ends: &field_ends[first..last], start })
+    pub fn get(&self, i: usize) -> Option<Tag<'a>> {
+        if i >= self.tags {
+            return None;
+        }
+        let last = word(self.body, 3 + i);
+        let first = if i == 0 { 0 } else { word(self.body, 3 + i - 1) };
+        Some(Tag { tags: *self, first, last })
     }
 
-    pub fn iter(&self) -> impl ExactSizeIterator<Item = Tag<'_>> + '_ {
-        (0..self.len()).map(|i| self.get(i).expect("i < len"))
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = Tag<'a>> + use<'a> {
+        let tags = *self;
+        (0..tags.len()).map(move |i| tags.get(i).expect("i < len"))
     }
 
     /// The tags as owned lists, as an [`Event`] holds them.
     pub fn to_vecs(&self) -> Vec<Vec<String>> {
         self.iter().map(|t| t.to_vec()).collect()
     }
+
+    /// Field `k` of all of them, counted across tags.
+    fn field(&self, k: usize) -> &'a str {
+        let end = word(self.body, 3 + self.tags + k);
+        let start = if k == 0 { 0 } else { word(self.body, 3 + self.tags + k - 1) };
+        let text = &self.body[self.text_at + start..self.text_at + end];
+        // SAFETY: every field the parser wrote is whole UTF-8.
+        unsafe { std::str::from_utf8_unchecked(text) }
+    }
 }
 
-impl fmt::Debug for Tags {
+impl fmt::Debug for Tags<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_list().entries(self.iter()).finish()
     }
 }
 
-/// One tag of a [`Tags`]: its fields as `&str`.
+/// One tag of a [`CompactEvent`]: its fields as `&str`.
 #[derive(Clone, Copy)]
 pub struct Tag<'a> {
-    text: &'a str,
-    /// Each field's end in `text`; the first starts at `start`.
-    ends: &'a [u32],
-    start: u32,
+    tags: Tags<'a>,
+    /// Its fields, counted across tags: `first..last`.
+    first: usize,
+    last: usize,
 }
 
 impl<'a> Tag<'a> {
     /// How many fields.
     pub fn len(&self) -> usize {
-        self.ends.len()
+        self.last - self.first
     }
 
     pub fn is_empty(&self) -> bool {
-        self.ends.is_empty()
+        self.first == self.last
     }
 
     /// Field `j`.
     pub fn get(&self, j: usize) -> Option<&'a str> {
-        let end = *self.ends.get(j)? as usize;
-        let start = if j == 0 { self.start } else { self.ends[j - 1] } as usize;
-        // SAFETY: every field end is the end of a whole UTF-8 string written by
-        // the parser, so both are char boundaries of `text`, and start <= end.
-        Some(unsafe { self.text.get_unchecked(start..end) })
+        (j < self.len()).then(|| self.tags.field(self.first + j))
     }
 
     /// The first field, as in `["e", ...]`.
@@ -122,7 +191,7 @@ impl<'a> Tag<'a> {
     /// The fields, borrowing the event rather than this `Tag`.
     pub fn iter(&self) -> impl ExactSizeIterator<Item = &'a str> + use<'a> {
         let tag = *self;
-        (0..tag.len()).map(move |j| tag.get(j).expect("j < len"))
+        (tag.first..tag.last).map(move |k| tag.tags.field(k))
     }
 
     pub fn to_vec(&self) -> Vec<String> {
@@ -173,40 +242,102 @@ pub struct Parser {
     esc: Vec<u8>,
 }
 
-/// Scratch for [`Event`]'s tags.
+/// An [`Event`] in the making.
 #[derive(Default)]
 struct Lists {
     fields: Vec<String>,
     tags: Vec<Vec<String>>,
+    out_tags: Vec<Vec<String>>,
+    out_content: String,
 }
 
-/// Scratch for [`CompactEvent`]'s tags: [`Tags`] in the making.
+/// A [`CompactEvent`] in the making: its tag text and index, and its content,
+/// copied into one block at the end.
 #[derive(Default)]
 struct Packed {
     text: Vec<u8>,
     fields: Vec<u32>,
     tag_ends: Vec<u32>,
+    /// The content's place in the input, or `None` when it had escapes and was
+    /// unescaped into `content`.
+    span: Option<(usize, usize)>,
+    content: Vec<u8>,
 }
 
-/// How a parse reads `tags`, so one parse serves both event shapes.
-trait TagRead {
-    type Tags: Default;
-    fn read(&mut self, c: &mut Cur<'_>) -> Result<Self::Tags>;
+/// What a parse reads `tags` and `content` into, and builds the event from, so
+/// one parse serves both event shapes.
+trait Build {
+    type Event;
+    fn tags(&mut self, c: &mut Cur<'_>) -> Result<()>;
+    fn content(&mut self, c: &mut Cur<'_>) -> Result<()>;
+    /// The event, once every field has been read; `input` is the text parsed.
+    fn finish(&mut self, head: Head, input: &[u8]) -> Result<Self::Event>;
 }
 
-impl TagRead for Lists {
-    type Tags = Vec<Vec<String>>;
+/// The fixed-size fields.
+#[derive(Default)]
+struct Head {
+    id: [u8; 32],
+    pubkey: [u8; 32],
+    created_at: u64,
+    kind: u16,
+    sig: Option<[u8; 64]>,
+}
+
+impl Build for Lists {
+    type Event = Event;
     #[inline(always)]
-    fn read(&mut self, c: &mut Cur<'_>) -> Result<Self::Tags> {
-        self.tags(c)
+    fn tags(&mut self, c: &mut Cur<'_>) -> Result<()> {
+        self.out_tags = self.read(c)?;
+        Ok(())
+    }
+    #[inline(always)]
+    fn content(&mut self, c: &mut Cur<'_>) -> Result<()> {
+        self.out_content = c.string()?;
+        Ok(())
+    }
+    #[inline(always)]
+    fn finish(&mut self, h: Head, _: &[u8]) -> Result<Event> {
+        let (tags, content) = (std::mem::take(&mut self.out_tags), std::mem::take(&mut self.out_content));
+        Ok(Event { id: h.id, pubkey: h.pubkey, created_at: h.created_at, kind: h.kind, tags, content, sig: h.sig })
     }
 }
 
-impl TagRead for Packed {
-    type Tags = Tags;
+impl Build for Packed {
+    type Event = CompactEvent;
     #[inline(always)]
-    fn read(&mut self, c: &mut Cur<'_>) -> Result<Self::Tags> {
-        self.tags(c)
+    fn tags(&mut self, c: &mut Cur<'_>) -> Result<()> {
+        self.read(c)
+    }
+    #[inline(always)]
+    fn content(&mut self, c: &mut Cur<'_>) -> Result<()> {
+        self.span = c.string_span(&mut self.content)?;
+        Ok(())
+    }
+    #[inline(always)]
+    fn finish(&mut self, h: Head, input: &[u8]) -> Result<CompactEvent> {
+        let content = match self.span {
+            Some((start, end)) => &input[start..end],
+            None => &self.content[..],
+        };
+        let (tags, fields) = (self.tag_ends.len(), self.fields.len());
+        let mut body = Vec::new();
+        if !content.is_empty() || tags > 0 {
+            let too_big = |n: usize| u32::try_from(n).is_err();
+            if too_big(content.len()) || too_big(self.text.len()) || too_big(tags + fields) {
+                return Err(Error { msg: "event too large", pos: 0 });
+            }
+            body.reserve_exact(HEAD + 4 * (tags + fields) + content.len() + self.text.len());
+            for n in [content.len(), tags, fields] {
+                body.extend_from_slice(&(n as u32).to_ne_bytes());
+            }
+            for n in self.tag_ends.iter().chain(&self.fields) {
+                body.extend_from_slice(&n.to_ne_bytes());
+            }
+            body.extend_from_slice(content);
+            body.extend_from_slice(&self.text);
+        }
+        Ok(CompactEvent { id: h.id, pubkey: h.pubkey, created_at: h.created_at, kind: h.kind, sig: h.sig, body: body.into_boxed_slice() })
     }
 }
 
@@ -237,10 +368,10 @@ impl Parser {
 }
 
 #[inline(always)]
-fn parse_with<R: TagRead>(tags: &mut R, esc: &mut Vec<u8>, json: &str) -> Result<Event<R::Tags>> {
-    match canonical(tags, esc, json) {
+fn parse_with<B: Build>(build: &mut B, esc: &mut Vec<u8>, json: &str) -> Result<B::Event> {
+    match canonical(build, esc, json) {
         Some(ev) => Ok(ev),
-        None => general(tags, esc, json),
+        None => general(build, esc, json),
     }
 }
 
@@ -249,30 +380,33 @@ fn parse_with<R: TagRead>(tags: &mut R, esc: &mut Vec<u8>, json: &str) -> Result
 /// order, whitespace, an extra key, an error) is left to [`general`], which
 /// reads any layout and names the error.
 #[inline(always)]
-fn canonical<R: TagRead>(reader: &mut R, esc: &mut Vec<u8>, json: &str) -> Option<Event<R::Tags>> {
+fn canonical<B: Build>(build: &mut B, esc: &mut Vec<u8>, json: &str) -> Option<B::Event> {
     let mut c = Cur { s: json, b: json.as_bytes(), p: 0, esc };
-    let (mut id, mut pubkey) = ([0u8; 32], [0u8; 32]);
+    let mut h = Head::default();
     c.lit(b"{\"id\":")?;
-    c.hex(&mut id, "").ok()?;
+    c.hex(&mut h.id, "").ok()?;
     c.lit(b",\"pubkey\":")?;
-    c.hex(&mut pubkey, "").ok()?;
+    c.hex(&mut h.pubkey, "").ok()?;
     c.lit(b",\"created_at\":")?;
-    let created_at = c.uint().ok()?;
+    h.created_at = c.uint().ok()?;
     c.lit(b",\"kind\":")?;
-    let kind = u16::try_from(c.uint().ok()?).ok()?;
+    h.kind = u16::try_from(c.uint().ok()?).ok()?;
     c.lit(b",\"tags\":")?;
-    let tags = reader.read(&mut c).ok()?;
+    build.tags(&mut c).ok()?;
     c.lit(b",\"content\":")?;
-    let content = c.string().ok()?;
+    build.content(&mut c).ok()?;
     c.lit(b",\"sig\":")?;
-    let sig = c.sig().ok()?;
+    h.sig = c.sig().ok()?;
     c.lit(b"}")?;
-    (c.p == c.b.len()).then_some(Event { id, pubkey, created_at, kind, tags, content, sig })
+    if c.p != c.b.len() {
+        return None;
+    }
+    build.finish(h, c.b).ok()
 }
 
-fn general<R: TagRead>(reader: &mut R, esc: &mut Vec<u8>, json: &str) -> Result<Event<R::Tags>> {
+fn general<B: Build>(build: &mut B, esc: &mut Vec<u8>, json: &str) -> Result<B::Event> {
     let mut c = Cur { s: json, b: json.as_bytes(), p: 0, esc };
-    let mut ev = Event::default();
+    let mut h = Head::default();
     let mut seen = 0u8;
     c.ws();
     c.expect(b'{', "expected '{'")?;
@@ -286,32 +420,32 @@ fn general<R: TagRead>(reader: &mut R, esc: &mut Vec<u8>, json: &str) -> Result<
             c.ws();
             let bit = match key {
                 Key::Id => {
-                    c.hex(&mut ev.id, "id must be 64 lowercase hex digits")?;
+                    c.hex(&mut h.id, "id must be 64 lowercase hex digits")?;
                     ID
                 }
                 Key::Pubkey => {
-                    c.hex(&mut ev.pubkey, "pubkey must be 64 lowercase hex digits")?;
+                    c.hex(&mut h.pubkey, "pubkey must be 64 lowercase hex digits")?;
                     PUBKEY
                 }
                 Key::CreatedAt => {
-                    ev.created_at = c.uint()?;
+                    h.created_at = c.uint()?;
                     CREATED_AT
                 }
                 Key::Kind => {
                     let p = c.p;
-                    ev.kind = u16::try_from(c.uint()?).map_err(|_| Error { msg: "kind out of range", pos: p })?;
+                    h.kind = u16::try_from(c.uint()?).map_err(|_| Error { msg: "kind out of range", pos: p })?;
                     KIND
                 }
                 Key::Tags => {
-                    ev.tags = reader.read(&mut c)?;
+                    build.tags(&mut c)?;
                     TAGS
                 }
                 Key::Content => {
-                    ev.content = c.string()?;
+                    build.content(&mut c)?;
                     CONTENT
                 }
                 Key::Sig => {
-                    ev.sig = c.sig()?;
+                    h.sig = c.sig()?;
                     SIG
                 }
                 Key::Other => {
@@ -340,13 +474,13 @@ fn general<R: TagRead>(reader: &mut R, esc: &mut Vec<u8>, json: &str) -> Result<
     if c.p != c.b.len() {
         return c.err("trailing characters");
     }
-    Ok(ev)
+    build.finish(h, c.b)
 }
 
 impl Lists {
     /// `[["e", "…"], …]`: each field is collected in `self.fields`, each tag in
     /// `self.tags`, and both are moved into exact-size lists at the end.
-    fn tags(&mut self, c: &mut Cur<'_>) -> Result<Vec<Vec<String>>> {
+    fn read(&mut self, c: &mut Cur<'_>) -> Result<Vec<Vec<String>>> {
         c.expect(b'[', "tags must be an array")?;
         c.ws();
         if c.peek() == Some(b']') {
@@ -387,18 +521,18 @@ impl Lists {
 
 impl Packed {
     /// `[["e", "…"], …]`: every field's text appended to `self.text`, its end
-    /// noted in `self.fields`, each tag's end in `self.tag_ends`; then the text
-    /// and one index copied out at their exact size.
-    fn tags(&mut self, c: &mut Cur<'_>) -> Result<Tags> {
+    /// noted in `self.fields`, each tag's end in `self.tag_ends`, ready for
+    /// [`Build::finish`] to copy into the event's block.
+    fn read(&mut self, c: &mut Cur<'_>) -> Result<()> {
+        self.text.clear();
+        self.fields.clear();
+        self.tag_ends.clear();
         c.expect(b'[', "tags must be an array")?;
         c.ws();
         if c.peek() == Some(b']') {
             c.p += 1;
-            return Ok(Tags::default());
+            return Ok(());
         }
-        self.text.clear();
-        self.fields.clear();
-        self.tag_ends.clear();
         loop {
             c.ws();
             c.expect(b'[', "a tag must be an array")?;
@@ -426,15 +560,7 @@ impl Packed {
                 _ => return c.err_back("expected ',' or ']' after a tag"),
             }
         }
-        if self.text.len() > u32::MAX as usize {
-            return c.err("tags hold more than 4 GiB of text");
-        }
-        let mut index = Vec::with_capacity(self.tag_ends.len() + self.fields.len());
-        index.extend_from_slice(&self.tag_ends);
-        index.extend_from_slice(&self.fields);
-        // SAFETY: whole UTF-8 strings back to back.
-        let text: Box<str> = unsafe { std::str::from_utf8_unchecked(&self.text) }.into();
-        Ok(Tags { text, index: index.into_boxed_slice(), ntags: self.tag_ends.len() as u32 })
+        Ok(())
     }
 }
 
@@ -639,6 +765,22 @@ impl Cur<'_> {
             return Ok(());
         }
         self.escaped_into(start, end, out)
+    }
+
+    /// A string the caller copies later: its place in the input, or `None`
+    /// when it had escapes and was unescaped into `out` (cleared first).
+    #[inline(always)]
+    fn string_span(&mut self, out: &mut Vec<u8>) -> Result<Option<(usize, usize)>> {
+        self.expect(b'"', "expected a string")?;
+        let start = self.p;
+        let end = simd::find_special(self.b, start);
+        if self.b.get(end) == Some(&b'"') {
+            self.p = end + 1;
+            return Ok(Some((start, end)));
+        }
+        out.clear();
+        self.escaped_into(start, end, out)?;
+        Ok(None)
     }
 
     #[cold]
