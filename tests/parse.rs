@@ -1,4 +1,4 @@
-use nostr_parse::{Event, encode_hex, parse};
+use nostr_parse::{CompactEvent, Event, encode_hex, parse, parse_compact};
 
 const ID: &str = "4376c65d2f232afbe9b882a35baa4f6fe8667c4e684749af565f981833ed6a65";
 const PK: &str = "6e468422dfb74a5738702a8823b9b28168abab8655faacb6853cd0ee15deee93";
@@ -6,6 +6,11 @@ const SIG: &str = "908a15e46fb4d8675bab026fc230a0e3542bfade63da02d542fb78b2a8513
 
 fn event(tags: &str, content: &str, sig: &str) -> String {
     format!(r#"{{"id":"{ID}","pubkey":"{PK}","created_at":1673347337,"kind":1,"tags":{tags},"content":{content},"sig":"{sig}"}}"#)
+}
+
+/// A compact event as the list-of-strings one, to compare with it.
+fn lists(e: CompactEvent) -> Event {
+    Event { id: e.id, pubkey: e.pubkey, created_at: e.created_at, kind: e.kind, tags: e.tags.to_vecs(), content: e.content, sig: e.sig }
 }
 
 /// The event serde_json reads from the same text, field by field.
@@ -37,7 +42,9 @@ fn reference(json: &str) -> Event {
 
 #[track_caller]
 fn same(json: &str) {
-    assert_eq!(parse(json).unwrap(), reference(json), "{json}");
+    let want = reference(json);
+    assert_eq!(parse(json).unwrap(), want, "{json}");
+    assert_eq!(lists(parse_compact(json).unwrap()), want, "compact: {json}");
 }
 
 #[test]
@@ -94,6 +101,7 @@ fn refuses_what_nip01_refuses() {
     ];
     for json in &bad {
         assert!(parse(json).is_err(), "accepted: {json}");
+        assert_eq!(parse_compact(json).err(), parse(json).err(), "compact, same error: {json}");
     }
 }
 
@@ -142,4 +150,22 @@ fn escapes_at_every_offset_match_serde_json() {
             }
         }
     }
+}
+
+/// A compact event's tags read back field by field: empty tags, empty fields,
+/// escaped fields and multi-byte text all where they belong.
+#[test]
+fn compact_tags_read_back() {
+    let json = event(r#"[["e","abc"],[],["",""],["t","caf\u00e9 \ud83c\udf89"],["p"]]"#, r#""x""#, SIG);
+    let tags = parse_compact(&json).unwrap().tags;
+    assert_eq!(tags.len(), 5);
+    let all: Vec<Vec<&str>> = tags.iter().map(|t| t.iter().collect()).collect();
+    assert_eq!(all, vec![vec!["e", "abc"], vec![], vec!["", ""], vec!["t", "café 🎉"], vec!["p"]]);
+    let t = tags.get(3).unwrap();
+    assert_eq!((t.name(), t.get(1), t.get(2), t.len()), (Some("t"), Some("café 🎉"), None, 2));
+    assert!(tags.get(1).unwrap().is_empty() && tags.get(1).unwrap().name().is_none());
+    assert!(tags.get(5).is_none());
+    assert_eq!(format!("{tags:?}"), r#"[["e", "abc"], [], ["", ""], ["t", "café 🎉"], ["p"]]"#);
+    let none = parse_compact(&event("[]", r#""x""#, SIG)).unwrap().tags;
+    assert!(none.is_empty() && none.iter().next().is_none());
 }
