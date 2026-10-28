@@ -8,6 +8,7 @@ description = "Parses Nostr events (NIP-01 JSON) into owned structs, fast"
 [dependencies]
 
 [dev-dependencies]
+serde = "1"
 serde_json = "1"
 
 [profile.release]

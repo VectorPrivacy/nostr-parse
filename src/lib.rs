@@ -347,9 +347,6 @@ impl Build for Packed {
     }
 }
 
-/// Nesting allowed inside a skipped value (an unknown key's).
-const MAX_DEPTH: u32 = 64;
-
 const ID: u8 = 1;
 const PUBKEY: u8 = 2;
 const CREATED_AT: u8 = 4;
@@ -455,7 +452,7 @@ fn general<B: Build>(build: &mut B, esc: &mut Vec<u8>, json: &str) -> Result<B::
                     SIG
                 }
                 Key::Other => {
-                    c.skip(0)?;
+                    c.skip()?;
                     0
                 }
             };
@@ -692,7 +689,22 @@ impl Cur<'_> {
                 self.p = p + n + 2;
                 Ok(())
             }
-            _ => self.err(msg),
+            _ => self.escaped_hex(out, msg),
+        }
+    }
+
+    /// [`Self::hex`] for a string that is not plain hex as written: JSON may spell
+    /// its digits as escapes (`"\u0061…"`), so it is unescaped and checked again.
+    #[cold]
+    #[inline(never)]
+    fn escaped_hex(&mut self, out: &mut [u8], msg: &'static str) -> Result<()> {
+        let p = self.p;
+        match self.string() {
+            Ok(s) if s.len() == out.len() * 2 && simd::decode_hex(s.as_bytes(), out) => Ok(()),
+            _ => {
+                self.p = p;
+                self.err(msg)
+            }
         }
     }
 
@@ -798,86 +810,100 @@ impl Cur<'_> {
     }
 
 
-    /// Skips one value of any kind, checking it is valid JSON.
-    fn skip(&mut self, depth: u32) -> Result<()> {
-        if depth > MAX_DEPTH {
-            return self.err("nested too deeply");
+    /// Skips one value of any kind, checking it is valid JSON. Iterative, so
+    /// any depth is fine (serde_json skips an unknown field's value the same
+    /// way, with no depth limit); the containers still open are kept in `open`,
+    /// which allocates only when a value nests.
+    fn skip(&mut self) -> Result<()> {
+        let mut open: Vec<u8> = Vec::new();
+        loop {
+            // A value.
+            self.ws();
+            match self.peek() {
+                Some(b'[') => {
+                    self.p += 1;
+                    self.ws();
+                    if self.peek() == Some(b']') {
+                        self.p += 1;
+                    } else {
+                        open.push(b'[');
+                        continue;
+                    }
+                }
+                Some(b'{') => {
+                    self.p += 1;
+                    self.ws();
+                    if self.peek() == Some(b'}') {
+                        self.p += 1;
+                    } else {
+                        open.push(b'{');
+                        self.member_key()?;
+                        continue;
+                    }
+                }
+                Some(b'"') => self.skip_string()?,
+                Some(b't') => self.literal(b"true")?,
+                Some(b'f') => self.literal(b"false")?,
+                Some(b'n') => self.literal(b"null")?,
+                Some(b'-' | b'0'..=b'9') => self.number()?,
+                _ => return self.err("expected a value"),
+            }
+            // After it: the next element, or containers closing.
+            loop {
+                let Some(&inner) = open.last() else { return Ok(()) };
+                self.ws();
+                match (self.next(), inner) {
+                    (Some(b','), b'[') => break,
+                    (Some(b','), _) => {
+                        self.member_key()?;
+                        break;
+                    }
+                    (Some(b']'), b'[') | (Some(b'}'), b'{') => {
+                        open.pop();
+                    }
+                    (_, b'[') => return self.err_back("expected ',' or ']'"),
+                    _ => return self.err_back("expected ',' or '}'"),
+                }
+            }
         }
-        match self.peek() {
-            Some(b'"') => {
-                self.p += 1;
-                let mut at = self.p;
-                loop {
-                    at = simd::find_special(self.b, at);
-                    match self.b.get(at) {
-                        Some(b'"') => break,
-                        Some(b'\\') => {
-                            at += match self.b.get(at + 1) {
-                                Some(b'"' | b'\\' | b'/' | b'b' | b'f' | b'n' | b'r' | b't') => 2,
-                                Some(b'u') if self.b.get(at + 2..at + 6).is_some_and(|h| h.iter().all(u8::is_ascii_hexdigit)) => 6,
-                                _ => {
-                                    self.p = at;
-                                    return self.err("bad escape");
-                                }
-                            }
-                        }
+    }
+
+    /// An object member's key and its colon, in a skipped value.
+    fn member_key(&mut self) -> Result<()> {
+        self.ws();
+        if self.peek() != Some(b'"') {
+            return self.err("expected a key");
+        }
+        self.skip_string()?;
+        self.ws();
+        self.expect(b':', "expected ':'")
+    }
+
+    /// A string, checked and passed over.
+    fn skip_string(&mut self) -> Result<()> {
+        self.p += 1;
+        let mut at = self.p;
+        loop {
+            at = simd::find_special(self.b, at);
+            match self.b.get(at) {
+                Some(b'"') => break,
+                Some(b'\\') => {
+                    at += match self.b.get(at + 1) {
+                        Some(b'"' | b'\\' | b'/' | b'b' | b'f' | b'n' | b'r' | b't') => 2,
+                        Some(b'u') if self.b.get(at + 2..at + 6).is_some_and(|h| h.iter().all(u8::is_ascii_hexdigit)) => 6,
                         _ => {
                             self.p = at;
-                            return self.err("bad string");
+                            return self.err("bad escape");
                         }
                     }
                 }
-                self.p = at + 1;
-            }
-            Some(b'{') => {
-                self.p += 1;
-                self.ws();
-                if self.peek() == Some(b'}') {
-                    self.p += 1;
-                    return Ok(());
-                }
-                loop {
-                    self.ws();
-                    if self.peek() != Some(b'"') {
-                        return self.err("expected a key");
-                    }
-                    self.skip(depth + 1)?;
-                    self.ws();
-                    self.expect(b':', "expected ':'")?;
-                    self.ws();
-                    self.skip(depth + 1)?;
-                    self.ws();
-                    match self.next() {
-                        Some(b',') => {}
-                        Some(b'}') => return Ok(()),
-                        _ => return self.err_back("expected ',' or '}'"),
-                    }
+                _ => {
+                    self.p = at;
+                    return self.err("bad string");
                 }
             }
-            Some(b'[') => {
-                self.p += 1;
-                self.ws();
-                if self.peek() == Some(b']') {
-                    self.p += 1;
-                    return Ok(());
-                }
-                loop {
-                    self.ws();
-                    self.skip(depth + 1)?;
-                    self.ws();
-                    match self.next() {
-                        Some(b',') => {}
-                        Some(b']') => return Ok(()),
-                        _ => return self.err_back("expected ',' or ']'"),
-                    }
-                }
-            }
-            Some(b't') => self.literal(b"true")?,
-            Some(b'f') => self.literal(b"false")?,
-            Some(b'n') => self.literal(b"null")?,
-            Some(b'-' | b'0'..=b'9') => self.number()?,
-            _ => return self.err("expected a value"),
         }
+        self.p = at + 1;
         Ok(())
     }
 

@@ -68,6 +68,9 @@ fn reads_what_serde_json_reads() {
     for t in ["9999999999999999999", "18446744073709551615"] {
         same(&format!(r#"{{"id":"{ID}","pubkey":"{PK}","created_at":{t},"kind":65535,"tags":[],"content":"","sig":""}}"#));
     }
+    // Hex spelled with JSON escapes is the same text (found by the fuzzer).
+    let escaped_id = format!("\\u00{:x}{}", ID.as_bytes()[0], &ID[1..]);
+    same(&format!(r#"{{"id":"{escaped_id}","pubkey":"{PK}","created_at":1,"kind":7,"tags":[],"content":"+","sig":"\u0039{}"}}"#, &SIG[1..]));
     // An escaped key still names its field.
     same(&format!(r#"{{"id":"{ID}","pubkey":"{PK}","created_at":1,"kind":7,"tags":[],"content":"+","sig":"{SIG}"}}"#));
 }
@@ -76,6 +79,7 @@ fn reads_what_serde_json_reads() {
 fn refuses_what_nip01_refuses() {
     let bad = [
         event("[]", r#""x""#, &SIG.to_uppercase()),
+        event("[]", r#""x""#, &format!("\\u0047{}", &SIG[1..])),
         event("[]", r#""x""#, &SIG[..126]),
         event("[[1]]", r#""x""#, SIG),
         event(r#"["e"]"#, r#""x""#, SIG),
@@ -189,4 +193,31 @@ fn a_parser_reused_keeps_events_apart() {
     // A failed parse (an error after the tags) leaves nothing behind either.
     assert!(p.parse_compact(&event(r#"[["e","stale"]]"#, "1", SIG)).is_err());
     assert_eq!(p.parse_compact(&without).unwrap().to_event(), reference(&without));
+}
+
+/// A value under an unknown key may nest to any depth, as serde_json allows
+/// when it skips an unknown field (found by the fuzzer: we stopped at 64), and
+/// a deep one that does not close, or closes wrongly, is still refused.
+#[test]
+fn skipped_values_nest_to_any_depth() {
+    use serde::de::IgnoredAny;
+    use std::collections::HashMap;
+    for (open, close) in [("[", "]"), ("{\"k\":", "}")] {
+        let at = |depth: usize, inner: &str, tail: &str| {
+            format!(r#"{{"x":{}{inner}{}{tail},"id":"{ID}","pubkey":"{PK}","created_at":1,"kind":1,"tags":[],"content":"","sig":""}}"#, open.repeat(depth), close.repeat(depth))
+        };
+        for depth in [126, 127, 128, 5000] {
+            for inner in ["0", ""] {
+                let json = at(depth, if open == "[" { inner } else { "0" }, "");
+                assert!(serde_json::from_str::<HashMap<String, IgnoredAny>>(&json).is_ok(), "serde_json skips {depth} levels");
+                assert!(parse(&json).is_ok() && parse_compact(&json).is_ok(), "{open}: {depth} levels");
+            }
+        }
+        for broken in [at(5000, "0", "]"), at(5000, "0", "}"), at(5000, "0", ",")] {
+            assert!(serde_json::from_str::<HashMap<String, IgnoredAny>>(&broken).is_err());
+            assert!(parse(&broken).is_err() && parse_compact(&broken).is_err(), "{open}: broken nesting accepted");
+        }
+        let unclosed = format!("{{\"x\":{}0", open.repeat(5000));
+        assert!(parse(&unclosed).is_err() && parse_compact(&unclosed).is_err());
+    }
 }
