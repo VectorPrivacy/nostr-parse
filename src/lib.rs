@@ -23,8 +23,15 @@
 //! An unsigned event, such as a NIP-59 rumor, is read by
 //! [`Parser::parse_unsigned`] into an [`UnsignedEvent`]: no `sig` needed (one
 //! that is there is ignored, whatever it holds), and the id optional.
+//!
+//! Every shape can write its NIP-01 serialization, the bytes whose SHA-256 is
+//! the event id, straight into a hasher with `write_preimage`, the same bytes
+//! rust-nostr hashes, without building them first.
 
+mod preimage;
 mod simd;
+
+pub use preimage::write_preimage;
 
 use std::fmt;
 
@@ -90,7 +97,32 @@ fn word(body: &[u8], k: usize) -> usize {
     u32::from_ne_bytes(body[4 * k..4 * k + 4].try_into().expect("4 bytes")) as usize
 }
 
+impl Event {
+    /// Its NIP-01 serialization, the bytes whose SHA-256 is its id, in pieces:
+    /// see [`write_preimage`].
+    pub fn write_preimage(&self, out: impl FnMut(&[u8])) {
+        let tags = self.tags.iter().map(|t| t.iter().map(String::as_str));
+        write_preimage(&self.pubkey, self.created_at, self.kind, tags, &self.content, out);
+    }
+}
+
+impl UnsignedEvent {
+    /// Its NIP-01 serialization, the bytes whose SHA-256 is its id, in pieces:
+    /// see [`write_preimage`].
+    pub fn write_preimage(&self, out: impl FnMut(&[u8])) {
+        let tags = self.tags.iter().map(|t| t.iter().map(String::as_str));
+        write_preimage(&self.pubkey, self.created_at, self.kind, tags, &self.content, out);
+    }
+}
+
 impl CompactEvent {
+    /// Its NIP-01 serialization, the bytes whose SHA-256 is its id, in pieces:
+    /// see [`write_preimage`].
+    pub fn write_preimage(&self, out: impl FnMut(&[u8])) {
+        let tags = self.tags();
+        write_preimage(&self.pubkey, self.created_at, self.kind, tags.iter().map(|t| t.iter()), self.content(), out);
+    }
+
     pub fn content(&self) -> &str {
         let at = 4 * (self.tag_count as usize + self.field_count as usize);
         // SAFETY: the parser wrote whole UTF-8 there.
@@ -346,6 +378,15 @@ pub struct EventSpans<'p, 'a> {
 }
 
 impl<'p, 'a> EventSpans<'p, 'a> {
+    /// Its NIP-01 serialization, the bytes whose SHA-256 is its id, in pieces
+    /// (see [`write_preimage`]), from the strings as written: one with no
+    /// escape passes as the slice of the input it is, copied nowhere. False
+    /// when a string holds a lone surrogate escape, which no event can carry;
+    /// what was written by then is not a preimage.
+    pub fn write_preimage(&self, out: impl FnMut(&[u8])) -> bool {
+        preimage::write_raw_preimage(&self.pubkey, self.created_at, self.kind, self.tags().map(|t| t.iter()), self.content, out)
+    }
+
     pub fn tags(&self) -> impl ExactSizeIterator<Item = SpanTag<'p, 'a>> + use<'p, 'a> {
         let (fields, ends, input) = (self.fields, self.tag_ends, self.input);
         (0..ends.len()).map(move |i| {

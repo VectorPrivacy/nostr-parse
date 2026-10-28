@@ -137,6 +137,43 @@ accepts an event, rust-nostr reads exactly the same one, and whatever rust-nostr
 hex, bech32 keys); hand those to rust-nostr. A refusal is cheap, since it stops at the
 first wrong field.
 
+### Event ids
+
+An event's id is the SHA-256 of its NIP-01 serialization,
+`[0,"<pubkey>",<created_at>,<kind>,<tags>,"<content>"]`. `write_preimage` writes those
+bytes into your hasher in pieces, instead of building them in a buffer. Every shape has
+it, and a free function takes the fields from anywhere (rust-nostr's types, say):
+
+```rust
+use sha2::{Digest, Sha256};
+
+let mut hasher = Sha256::new();
+event.write_preimage(|bytes| hasher.update(bytes));
+let id_matches = hasher.finalize().as_slice() == event.id;
+```
+
+The bytes are exactly the ones rust-nostr hashes (`serde_json::to_vec` of that tuple):
+`"` and `\` escaped, control characters as `\b \t \n \f \r` or `\u00xx`, and everything
+else, `/` and non-ASCII included, as plain UTF-8. Content with nothing to escape, as
+almost all is, goes to the hasher as one slice. `EventSpans::write_preimage` works from
+the strings as written: one with no escape is passed as the slice of the input it is,
+copied nowhere. Escapes such as `\/`, `é` or a surrogate pair become the canonical
+spelling, and only a lone surrogate, which no event can carry, gets `false`.
+
+Against `serde_json::to_vec` of the same fields, then SHA-256 of the buffer, with the same
+SHA-256 (sha2 0.11) for both, on an Apple M4 Max (`cargo run --release --example ids`):
+
+| ns per id | serde_json | `write_preimage` | |
+|---|---:|---:|---:|
+| gift wrap, 1.6 KB base64 | 1,346 | 786 | 1.71× |
+| seal, 700 B base64 | 641 | 376 | 1.70× |
+| note, 200 B, 5 tags | 707 | 471 | 1.50× |
+| article, 10 KB with escapes | 10,506 | 7,695 | 1.37× |
+
+What remains is mostly the SHA-256 itself. The tests compare the bytes with serde_json's
+on hand-picked escapes and on every event the fuzzer generates, and check that rust-nostr's
+own `Event::verify_id` accepts ids computed from them.
+
 ## Benchmarks
 
 Measured with [nostrJsonBench](https://github.com/vitorpamplona/nostrJsonBench), Vitor Pamplona's

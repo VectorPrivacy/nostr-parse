@@ -134,7 +134,33 @@ fn disagreement(p: &mut Parser, json: &str) -> Option<String> {
     if let Some(why) = spans_disagreement(p, json, &want) {
         return Some(why);
     }
+    if let Some(why) = want.as_ref().and_then(|ev| preimage_disagreement(p, json, ev)) {
+        return Some(why);
+    }
     unsigned_disagreement(p, json)
+}
+
+/// Where a shape's NIP-01 serialization differs from serde_json's (what
+/// rust-nostr hashes for the id), if anywhere.
+fn preimage_disagreement(p: &mut Parser, json: &str, ev: &Event) -> Option<String> {
+    let pubkey: String = ev.pubkey.iter().map(|b| format!("{b:02x}")).collect();
+    let want = serde_json::to_vec(&(0u8, pubkey, ev.created_at, ev.kind, &ev.tags, &ev.content)).unwrap();
+    let mut got: Vec<(&str, Vec<u8>)> = Vec::new();
+    let mut bytes = Vec::new();
+    ev.write_preimage(|b| bytes.extend_from_slice(b));
+    got.push(("Event", std::mem::take(&mut bytes)));
+    let compact = p.parse_compact(json).ok()?;
+    compact.write_preimage(|b| bytes.extend_from_slice(b));
+    got.push(("CompactEvent", bytes));
+    let sp = p.parse_spans(json).ok()?;
+    let mut raw = Vec::new();
+    if !sp.write_preimage(|b| raw.extend_from_slice(b)) {
+        return Some("EventSpans found no preimage for an event serde_json reads".into());
+    }
+    got.push(("EventSpans", raw));
+    got.into_iter().find(|(_, g)| *g != want).map(|(name, g)| {
+        format!("{name} preimage {:?} vs serde_json's {:?}", String::from_utf8_lossy(&g), String::from_utf8_lossy(&want))
+    })
 }
 
 /// What `parse_unsigned` got wrong, against rust-nostr's reader, if anything.
