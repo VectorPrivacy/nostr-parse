@@ -46,37 +46,33 @@ pub struct CompactEvent {
     pub kind: u16,
     /// `None` for an unsigned event, whose sig is `""`.
     pub sig: Option<[u8; 64]>,
-    /// Empty, or: three `u32`s (content length, tag count, field count); the
-    /// index, each tag's end as a count of fields so far and then each field's
-    /// end in the tag text; the content; the tag text (every field back to back).
+    /// The sizes of `body`'s parts: content bytes, tags, fields.
+    content_len: u32,
+    tag_count: u32,
+    field_count: u32,
+    /// The index (each tag's end as a count of fields so far, then each field's
+    /// end in the tag text, as `u32`s), the content, then the tag text (every
+    /// field back to back). Empty for an event with no content and no tags.
     body: Box<[u8]>,
 }
 
-/// Bytes before a [`CompactEvent`] body's index.
-const HEAD: usize = 12;
-
-/// The `k`th `u32` of a body: its header, then its index.
+/// The `k`th `u32` of a body's index.
 #[inline(always)]
 fn word(body: &[u8], k: usize) -> usize {
     u32::from_ne_bytes(body[4 * k..4 * k + 4].try_into().expect("4 bytes")) as usize
 }
 
 impl CompactEvent {
-    /// `(content length, tags, fields)`.
-    fn counts(&self) -> (usize, usize, usize) {
-        if self.body.is_empty() { (0, 0, 0) } else { (word(&self.body, 0), word(&self.body, 1), word(&self.body, 2)) }
-    }
-
     pub fn content(&self) -> &str {
-        let (len, tags, fields) = self.counts();
-        let at = HEAD + 4 * (tags + fields);
+        let at = 4 * (self.tag_count as usize + self.field_count as usize);
         // SAFETY: the parser wrote whole UTF-8 there.
-        unsafe { std::str::from_utf8_unchecked(self.body.get(at..at + len).unwrap_or_default()) }
+        unsafe { std::str::from_utf8_unchecked(&self.body[at..at + self.content_len as usize]) }
     }
 
     pub fn tags(&self) -> Tags<'_> {
-        let (len, tags, fields) = self.counts();
-        Tags { body: &self.body, tags, text_at: HEAD + 4 * (tags + fields) + len }
+        let tags = self.tag_count as usize;
+        let text_at = 4 * (tags + self.field_count as usize) + self.content_len as usize;
+        Tags { body: &self.body, tags, text_at }
     }
 
     /// The same event with its tags as owned lists.
@@ -128,8 +124,8 @@ impl<'a> Tags<'a> {
         if i >= self.tags {
             return None;
         }
-        let last = word(self.body, 3 + i);
-        let first = if i == 0 { 0 } else { word(self.body, 3 + i - 1) };
+        let last = word(self.body, i);
+        let first = if i == 0 { 0 } else { word(self.body, i - 1) };
         Some(Tag { tags: *self, first, last })
     }
 
@@ -145,8 +141,8 @@ impl<'a> Tags<'a> {
 
     /// Field `k` of all of them, counted across tags.
     fn field(&self, k: usize) -> &'a str {
-        let end = word(self.body, 3 + self.tags + k);
-        let start = if k == 0 { 0 } else { word(self.body, 3 + self.tags + k - 1) };
+        let end = word(self.body, self.tags + k);
+        let start = if k == 0 { 0 } else { word(self.body, self.tags + k - 1) };
         let text = &self.body[self.text_at + start..self.text_at + end];
         // SAFETY: every field the parser wrote is whole UTF-8.
         unsafe { std::str::from_utf8_unchecked(text) }
@@ -321,23 +317,27 @@ impl Build for Packed {
             None => &self.content[..],
         };
         let (tags, fields) = (self.tag_ends.len(), self.fields.len());
-        let mut body = Vec::new();
-        if !content.is_empty() || tags > 0 {
-            let too_big = |n: usize| u32::try_from(n).is_err();
-            if too_big(content.len()) || too_big(self.text.len()) || too_big(tags + fields) {
-                return Err(Error { msg: "event too large", pos: 0 });
-            }
-            body.reserve_exact(HEAD + 4 * (tags + fields) + content.len() + self.text.len());
-            for n in [content.len(), tags, fields] {
-                body.extend_from_slice(&(n as u32).to_ne_bytes());
-            }
-            for n in self.tag_ends.iter().chain(&self.fields) {
-                body.extend_from_slice(&n.to_ne_bytes());
-            }
-            body.extend_from_slice(content);
-            body.extend_from_slice(&self.text);
+        let too_big = |n: usize| u32::try_from(n).is_err();
+        if too_big(content.len()) || too_big(self.text.len()) || too_big(tags + fields) {
+            return Err(Error { msg: "event too large", pos: 0 });
         }
-        Ok(CompactEvent { id: h.id, pubkey: h.pubkey, created_at: h.created_at, kind: h.kind, sig: h.sig, body: body.into_boxed_slice() })
+        let mut body = Vec::with_capacity(4 * (tags + fields) + content.len() + self.text.len());
+        for n in self.tag_ends.iter().chain(&self.fields) {
+            body.extend_from_slice(&n.to_ne_bytes());
+        }
+        body.extend_from_slice(content);
+        body.extend_from_slice(&self.text);
+        Ok(CompactEvent {
+            id: h.id,
+            pubkey: h.pubkey,
+            created_at: h.created_at,
+            kind: h.kind,
+            sig: h.sig,
+            content_len: content.len() as u32,
+            tag_count: tags as u32,
+            field_count: fields as u32,
+            body: body.into_boxed_slice(),
+        })
     }
 }
 
