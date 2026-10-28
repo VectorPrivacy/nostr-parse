@@ -89,37 +89,48 @@ unsafe fn special_sse2(b: &[u8], mut i: usize) -> Result<usize, usize> {
     Err(i)
 }
 
-/// Position of the first `"`, `\` or control byte in the 16 bytes at `p`, or 16.
-///
-/// # Safety
-/// `p` must be valid for reading 16 bytes.
+/// Which of the 16 bytes in `v` are `"`, `\` or control bytes, as a mask that
+/// is 0 when none is; [`first_of`] reads the first one's position from it. It
+/// takes the bytes already loaded, so a caller that copies the block is not
+/// made to load it twice, and returns the mask rather than a position, so a
+/// caller can branch on "none" and move on 16 bytes without waiting for it.
 #[inline(always)]
-pub unsafe fn first_special16(p: *const u8) -> usize {
+pub fn special_mask(v: [u8; 16]) -> u64 {
     #[cfg(target_arch = "aarch64")]
-    // SAFETY: the caller vouches for 16 readable bytes; NEON is baseline.
+    // SAFETY: NEON is baseline on aarch64; `v` is 16 bytes.
     unsafe {
         use std::arch::aarch64::*;
-        let v = vld1q_u8(p);
+        let v = vld1q_u8(v.as_ptr());
         let hit = vorrq_u8(vorrq_u8(vceqq_u8(v, vdupq_n_u8(b'"')), vceqq_u8(v, vdupq_n_u8(b'\\'))), vcltq_u8(v, vdupq_n_u8(0x20)));
-        let m = vget_lane_u64(vreinterpret_u64_u8(vshrn_n_u16(vreinterpretq_u16_u8(hit), 4)), 0);
-        if m == 0 { 16 } else { (m.trailing_zeros() / 4) as usize }
+        // Narrow each 0xFF/0x00 byte to a nibble: 4 bits a byte.
+        vget_lane_u64(vreinterpret_u64_u8(vshrn_n_u16(vreinterpretq_u16_u8(hit), 4)), 0)
     }
     #[cfg(target_arch = "x86_64")]
-    // SAFETY: the caller vouches for 16 readable bytes; SSE2 is part of x86_64.
+    // SAFETY: SSE2 is part of x86_64; `v` is 16 bytes.
     unsafe {
         use std::arch::x86_64::*;
-        let v = _mm_loadu_si128(p as *const __m128i);
+        let v = _mm_loadu_si128(v.as_ptr() as *const __m128i);
         let ctl = _mm_set1_epi8(0x1F);
         let low = _mm_cmpeq_epi8(_mm_min_epu8(v, ctl), v);
         let hit = _mm_or_si128(_mm_or_si128(_mm_cmpeq_epi8(v, _mm_set1_epi8(b'"' as i8)), _mm_cmpeq_epi8(v, _mm_set1_epi8(b'\\' as i8))), low);
-        let m = _mm_movemask_epi8(hit) as u32 | 0x1_0000;
-        m.trailing_zeros() as usize
+        _mm_movemask_epi8(hit) as u32 as u64
     }
     #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
-    // SAFETY: the caller vouches for 16 readable bytes.
-    unsafe {
-        let s = std::slice::from_raw_parts(p, 16);
-        s.iter().position(|&c| c == b'"' || c == b'\\' || c < 0x20).unwrap_or(16)
+    {
+        v.iter().enumerate().fold(0u64, |m, (i, &c)| m | (u64::from(c == b'"' || c == b'\\' || c < 0x20) << i))
+    }
+}
+
+/// The position of the first special byte a non-zero [`special_mask`] marks.
+#[inline(always)]
+pub fn first_of(mask: u64) -> usize {
+    #[cfg(target_arch = "aarch64")]
+    {
+        (mask.trailing_zeros() / 4) as usize
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        mask.trailing_zeros() as usize
     }
 }
 

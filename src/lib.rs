@@ -798,16 +798,20 @@ fn unescape(b: &[u8], start: usize, at: usize, out: &mut Vec<u8>) -> Result<usiz
         // stored before it is checked, and only its clean part is kept.
         while i + 16 <= b.len() {
             // SAFETY: 16 bytes are readable at `i` and writable at `o`.
-            let k = unsafe {
-                let v = std::ptr::read_unaligned(b.as_ptr().add(i) as *const [u8; 16]);
-                std::ptr::write_unaligned(dst.add(o) as *mut [u8; 16], v);
-                simd::first_special16(b.as_ptr().add(i))
-            };
+            let v = unsafe { std::ptr::read_unaligned(b.as_ptr().add(i) as *const [u8; 16]) };
+            unsafe { std::ptr::write_unaligned(dst.add(o) as *mut [u8; 16], v) };
+            let m = simd::special_mask(v);
+            // A clean block moves on by 16 without waiting for the mask's
+            // position to be worked out: the next load starts at once.
+            if m == 0 {
+                i += 16;
+                o += 16;
+                continue;
+            }
+            let k = simd::first_of(m);
             i += k;
             o += k;
-            if k < 16 {
-                break;
-            }
+            break;
         }
         if i + 16 > b.len() {
             while i < b.len() && !matches!(b[i], b'"' | b'\\' | 0..=0x1F) {
