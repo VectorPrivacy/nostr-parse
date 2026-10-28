@@ -2,8 +2,15 @@
 name = "nostr-parse"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.85"
 publish = false
 description = "Parses Nostr events (NIP-01 JSON) into owned structs, fast"
+license = "MIT"
+readme = "README.md"
+keywords = ["nostr", "json", "parser", "nip-01"]
+categories = ["parser-implementations", "encoding"]
+repository = "https://github.com/VectorPrivacy/nostr-parse"
+exclude = ["bench/"]
 
 [dependencies]
 

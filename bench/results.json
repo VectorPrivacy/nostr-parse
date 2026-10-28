@@ -1,0 +1,1112 @@
+{
+ "corpus": {
+  "events": 31161,
+  "fingerprint": "f995f42b68b5386e990c859e6c8058e8df7cd1d430e38e9e14d6e954e81c89bb"
+ },
+ "libraries": {
+  "nostr-parse-compact-typed": {
+   "library": "nostr-parse",
+   "version": "0.1.0"
+  },
+  "nostr-parse-nostr-typed": {
+   "library": "nostr-parse",
+   "version": "0.1.0"
+  },
+  "nostr-parse-typed": {
+   "library": "nostr-parse",
+   "version": "0.1.0"
+  },
+  "nostr-typed": {
+   "library": "nostr",
+   "version": "0.45.5"
+  },
+  "quartz-kite": {
+   "library": "Quartz Kite (hand-written reader, JsonEngine.KITE)",
+   "version": "2.2.0"
+  },
+  "serde_json-typed": {
+   "library": "serde_json",
+   "version": "1.0.154"
+  },
+  "simd_json-typed": {
+   "library": "simd-json",
+   "version": "0.18.1"
+  },
+  "simdjson_rust-typed": {
+   "library": "simdjson-rust",
+   "version": "0.4.0-alpha.2"
+  },
+  "sonic_rs-typed": {
+   "library": "sonic-rs",
+   "version": "0.5.10"
+  }
+ },
+ "platforms": {
+  "macos": {
+   "cpu": "aarch64",
+   "label": "macOS \u00b7 Apple M4 Max",
+   "parsers": {
+    "nostr-parse-compact-typed": {
+     "all": {
+      "alloc_bytes": 533.67,
+      "allocs": 1.0,
+      "kept_bytes": 701.67,
+      "kept_objects": 1.0,
+      "ns": 212.02
+     },
+     "dms": {
+      "alloc_bytes": 304.48,
+      "allocs": 1.0,
+      "kept_bytes": 472.48,
+      "kept_objects": 1.0,
+      "ns": 89.46
+     },
+     "giftwraps": {
+      "alloc_bytes": 1360.1,
+      "allocs": 1.0,
+      "kept_bytes": 1528.1,
+      "kept_objects": 1.0,
+      "ns": 143.87
+     },
+     "lists": {
+      "alloc_bytes": 8252.53,
+      "allocs": 1.0,
+      "kept_bytes": 8420.53,
+      "kept_objects": 1.0,
+      "ns": 1008.33
+     },
+     "metadata": {
+      "alloc_bytes": 485.78,
+      "allocs": 1.0,
+      "kept_bytes": 653.78,
+      "kept_objects": 1.0,
+      "ns": 321.98
+     },
+     "notes": {
+      "alloc_bytes": 579.17,
+      "allocs": 1.0,
+      "kept_bytes": 747.17,
+      "kept_objects": 1.0,
+      "ns": 238.28
+     },
+     "reactions": {
+      "alloc_bytes": 230.95,
+      "allocs": 1.0,
+      "kept_bytes": 398.95,
+      "kept_objects": 1.0,
+      "ns": 124.85
+     },
+     "zaps": {
+      "alloc_bytes": 1741.84,
+      "allocs": 1.0,
+      "kept_bytes": 1909.84,
+      "kept_objects": 1.0,
+      "ns": 624.57
+     }
+    },
+    "nostr-parse-nostr-typed": {
+     "all": {
+      "alloc_bytes": 723.66,
+      "allocs": 11.05,
+      "kept_bytes": 915.66,
+      "kept_objects": 11.05,
+      "ns": 388.42
+     },
+     "dms": {
+      "alloc_bytes": 381.1,
+      "allocs": 5.83,
+      "kept_bytes": 573.1,
+      "kept_objects": 5.83,
+      "ns": 189.08
+     },
+     "giftwraps": {
+      "alloc_bytes": 1435.25,
+      "allocs": 5.76,
+      "kept_bytes": 1627.25,
+      "kept_objects": 5.76,
+      "ns": 245.25
+     },
+     "lists": {
+      "alloc_bytes": 9773.03,
+      "allocs": 77.8,
+      "kept_bytes": 9965.03,
+      "kept_objects": 77.8,
+      "ns": 2047.93
+     },
+     "metadata": {
+      "alloc_bytes": 507.95,
+      "allocs": 2.4,
+      "kept_bytes": 699.95,
+      "kept_objects": 2.4,
+      "ns": 376.71
+     },
+     "notes": {
+      "alloc_bytes": 915.49,
+      "allocs": 17.83,
+      "kept_bytes": 1107.49,
+      "kept_objects": 17.83,
+      "ns": 525.74
+     },
+     "reactions": {
+      "alloc_bytes": 427.96,
+      "allocs": 11.65,
+      "kept_bytes": 619.96,
+      "kept_objects": 11.65,
+      "ns": 304.54
+     },
+     "zaps": {
+      "alloc_bytes": 2062.53,
+      "allocs": 17.07,
+      "kept_bytes": 2254.53,
+      "kept_objects": 17.07,
+      "ns": 911.94
+     }
+    },
+    "nostr-parse-typed": {
+     "all": {
+      "alloc_bytes": 723.66,
+      "allocs": 11.05,
+      "kept_bytes": 915.66,
+      "kept_objects": 11.05,
+      "ns": 368.96
+     },
+     "dms": {
+      "alloc_bytes": 381.1,
+      "allocs": 5.83,
+      "kept_bytes": 573.1,
+      "kept_objects": 5.83,
+      "ns": 171.81
+     },
+     "giftwraps": {
+      "alloc_bytes": 1435.25,
+      "allocs": 5.76,
+      "kept_bytes": 1627.25,
+      "kept_objects": 5.76,
+      "ns": 226.77
+     },
+     "lists": {
+      "alloc_bytes": 9773.03,
+      "allocs": 77.8,
+      "kept_bytes": 9965.03,
+      "kept_objects": 77.8,
+      "ns": 2025.0
+     },
+     "metadata": {
+      "alloc_bytes": 507.95,
+      "allocs": 2.4,
+      "kept_bytes": 699.95,
+      "kept_objects": 2.4,
+      "ns": 358.37
+     },
+     "notes": {
+      "alloc_bytes": 915.49,
+      "allocs": 17.83,
+      "kept_bytes": 1107.49,
+      "kept_objects": 17.83,
+      "ns": 504.16
+     },
+     "reactions": {
+      "alloc_bytes": 427.96,
+      "allocs": 11.65,
+      "kept_bytes": 619.96,
+      "kept_objects": 11.65,
+      "ns": 282.33
+     },
+     "zaps": {
+      "alloc_bytes": 2062.53,
+      "allocs": 17.07,
+      "kept_bytes": 2254.53,
+      "kept_objects": 17.07,
+      "ns": 894.64
+     }
+    },
+    "nostr-typed": {
+     "all": {
+      "alloc_bytes": 1686.55,
+      "allocs": 16.34,
+      "kept_bytes": 1087.25,
+      "kept_objects": 11.05,
+      "ns": 929.0
+     },
+     "dms": {
+      "alloc_bytes": 776.42,
+      "allocs": 8.85,
+      "kept_bytes": 706.01,
+      "kept_objects": 5.83,
+      "ns": 513.75
+     },
+     "giftwraps": {
+      "alloc_bytes": 2356.51,
+      "allocs": 9.21,
+      "kept_bytes": 1746.85,
+      "kept_objects": 5.76,
+      "ns": 666.62
+     },
+     "lists": {
+      "alloc_bytes": 13193.65,
+      "allocs": 84.3,
+      "kept_bytes": 11457.23,
+      "kept_objects": 77.8,
+      "ns": 3700.0
+     },
+     "metadata": {
+      "alloc_bytes": 2126.26,
+      "allocs": 11.1,
+      "kept_bytes": 734.96,
+      "kept_objects": 2.4,
+      "ns": 1066.23
+     },
+     "notes": {
+      "alloc_bytes": 1999.05,
+      "allocs": 23.46,
+      "kept_bytes": 1326.86,
+      "kept_objects": 17.83,
+      "ns": 1123.05
+     },
+     "reactions": {
+      "alloc_bytes": 902.53,
+      "allocs": 16.08,
+      "kept_bytes": 789.82,
+      "kept_objects": 11.65,
+      "ns": 703.65
+     },
+     "zaps": {
+      "alloc_bytes": 5771.77,
+      "allocs": 27.27,
+      "kept_bytes": 2551.83,
+      "kept_objects": 17.07,
+      "ns": 1874.87
+     }
+    },
+    "quartz-kite": {
+     "all": {
+      "alloc_bytes": 1321.41,
+      "allocs": 21.34,
+      "kept_bytes": 1289.28,
+      "kept_objects": 21.35,
+      "ns": 406.06
+     },
+     "dms": {
+      "alloc_bytes": 863.77,
+      "allocs": 13.94,
+      "kept_bytes": 865.6,
+      "kept_objects": 13.94,
+      "ns": 209.6
+     },
+     "giftwraps": {
+      "alloc_bytes": 1928.29,
+      "allocs": 14.3,
+      "kept_bytes": 1949.03,
+      "kept_objects": 14.31,
+      "ns": 332.82
+     },
+     "lists": {
+      "alloc_bytes": 10157.2,
+      "allocs": 86.8,
+      "kept_bytes": 10157.2,
+      "kept_objects": 86.8,
+      "ns": 1639.6
+     },
+     "metadata": {
+      "alloc_bytes": 1455.79,
+      "allocs": 11.47,
+      "kept_bytes": 1216.45,
+      "kept_objects": 10.99,
+      "ns": 685.17
+     },
+     "notes": {
+      "alloc_bytes": 1573.06,
+      "allocs": 28.63,
+      "kept_bytes": 1512.88,
+      "kept_objects": 28.27,
+      "ns": 456.98
+     },
+     "reactions": {
+      "alloc_bytes": 906.12,
+      "allocs": 20.17,
+      "kept_bytes": 903.04,
+      "kept_objects": 20.16,
+      "ns": 262.21
+     },
+     "zaps": {
+      "alloc_bytes": 2757.43,
+      "allocs": 31.65,
+      "kept_bytes": 2762.19,
+      "kept_objects": 33.65,
+      "ns": 955.68
+     }
+    },
+    "serde_json-typed": {
+     "all": {
+      "alloc_bytes": 1643.64,
+      "allocs": 15.44,
+      "kept_bytes": 1280.9,
+      "kept_objects": 14.01,
+      "ns": 719.97
+     },
+     "dms": {
+      "alloc_bytes": 776.42,
+      "allocs": 8.85,
+      "kept_bytes": 906.01,
+      "kept_objects": 8.83,
+      "ns": 383.02
+     },
+     "giftwraps": {
+      "alloc_bytes": 2356.51,
+      "allocs": 9.21,
+      "kept_bytes": 1946.85,
+      "kept_objects": 8.76,
+      "ns": 517.55
+     },
+     "lists": {
+      "alloc_bytes": 13193.65,
+      "allocs": 84.3,
+      "kept_bytes": 11657.23,
+      "kept_objects": 80.8,
+      "ns": 3164.58
+     },
+     "metadata": {
+      "alloc_bytes": 2126.26,
+      "allocs": 11.1,
+      "kept_bytes": 934.96,
+      "kept_objects": 5.4,
+      "ns": 935.95
+     },
+     "notes": {
+      "alloc_bytes": 1998.32,
+      "allocs": 23.45,
+      "kept_bytes": 1526.75,
+      "kept_objects": 20.83,
+      "ns": 921.43
+     },
+     "reactions": {
+      "alloc_bytes": 868.27,
+      "allocs": 15.28,
+      "kept_bytes": 985.06,
+      "kept_objects": 14.61,
+      "ns": 531.3
+     },
+     "zaps": {
+      "alloc_bytes": 5771.77,
+      "allocs": 27.27,
+      "kept_bytes": 2751.83,
+      "kept_objects": 20.07,
+      "ns": 1706.77
+     }
+    },
+    "simd_json-typed": {
+     "all": {
+      "alloc_bytes": 2705.46,
+      "allocs": 15.26,
+      "kept_bytes": 1109.3,
+      "kept_objects": 14.01,
+      "ns": 759.52
+     },
+     "dms": {
+      "alloc_bytes": 1594.19,
+      "allocs": 9.87,
+      "kept_bytes": 773.1,
+      "kept_objects": 8.83,
+      "ns": 450.54
+     },
+     "giftwraps": {
+      "alloc_bytes": 2600.93,
+      "allocs": 9.78,
+      "kept_bytes": 1827.25,
+      "kept_objects": 8.76,
+      "ns": 672.44
+     },
+     "lists": {
+      "alloc_bytes": 17719.83,
+      "allocs": 82.18,
+      "kept_bytes": 10165.03,
+      "kept_objects": 80.8,
+      "ns": 3976.05
+     },
+     "metadata": {
+      "alloc_bytes": 1804.9,
+      "allocs": 6.59,
+      "kept_bytes": 899.95,
+      "kept_objects": 5.4,
+      "ns": 762.75
+     },
+     "notes": {
+      "alloc_bytes": 3708.29,
+      "allocs": 22.23,
+      "kept_bytes": 1307.38,
+      "kept_objects": 20.83,
+      "ns": 939.18
+     },
+     "reactions": {
+      "alloc_bytes": 2289.15,
+      "allocs": 15.81,
+      "kept_bytes": 815.2,
+      "kept_objects": 14.61,
+      "ns": 573.59
+     },
+     "zaps": {
+      "alloc_bytes": 4206.26,
+      "allocs": 21.23,
+      "kept_bytes": 2454.53,
+      "kept_objects": 20.07,
+      "ns": 1600.46
+     }
+    },
+    "simdjson_rust-typed": {
+     "all": {
+      "alloc_bytes": 973.3,
+      "allocs": 14.01,
+      "kept_bytes": 1109.3,
+      "kept_objects": 14.01,
+      "ns": 791.27
+     },
+     "dms": {
+      "alloc_bytes": 637.1,
+      "allocs": 8.83,
+      "kept_bytes": 773.1,
+      "kept_objects": 8.83,
+      "ns": 480.88
+     },
+     "giftwraps": {
+      "alloc_bytes": 1691.25,
+      "allocs": 8.76,
+      "kept_bytes": 1827.25,
+      "kept_objects": 8.76,
+      "ns": 660.82
+     },
+     "lists": {
+      "alloc_bytes": 10029.03,
+      "allocs": 80.8,
+      "kept_bytes": 10165.03,
+      "kept_objects": 80.8,
+      "ns": 3925.0
+     },
+     "metadata": {
+      "alloc_bytes": 763.95,
+      "allocs": 5.4,
+      "kept_bytes": 899.95,
+      "kept_objects": 5.4,
+      "ns": 707.24
+     },
+     "notes": {
+      "alloc_bytes": 1171.38,
+      "allocs": 20.83,
+      "kept_bytes": 1307.38,
+      "kept_objects": 20.83,
+      "ns": 1010.14
+     },
+     "reactions": {
+      "alloc_bytes": 679.2,
+      "allocs": 14.61,
+      "kept_bytes": 815.2,
+      "kept_objects": 14.61,
+      "ns": 606.35
+     },
+     "zaps": {
+      "alloc_bytes": 2318.53,
+      "allocs": 20.07,
+      "kept_bytes": 2454.53,
+      "kept_objects": 20.07,
+      "ns": 1485.27
+     }
+    },
+    "sonic_rs-typed": {
+     "all": {
+      "alloc_bytes": 1674.79,
+      "allocs": 15.81,
+      "kept_bytes": 1280.9,
+      "kept_objects": 14.01,
+      "ns": 627.73
+     },
+     "dms": {
+      "alloc_bytes": 776.42,
+      "allocs": 8.85,
+      "kept_bytes": 906.01,
+      "kept_objects": 8.83,
+      "ns": 316.59
+     },
+     "giftwraps": {
+      "alloc_bytes": 2431.74,
+      "allocs": 10.09,
+      "kept_bytes": 1946.85,
+      "kept_objects": 8.76,
+      "ns": 458.41
+     },
+     "lists": {
+      "alloc_bytes": 13044.88,
+      "allocs": 84.43,
+      "kept_bytes": 11657.23,
+      "kept_objects": 80.8,
+      "ns": 2823.95
+     },
+     "metadata": {
+      "alloc_bytes": 2202.68,
+      "allocs": 12.43,
+      "kept_bytes": 934.96,
+      "kept_objects": 5.4,
+      "ns": 785.29
+     },
+     "notes": {
+      "alloc_bytes": 2072.33,
+      "allocs": 23.84,
+      "kept_bytes": 1526.75,
+      "kept_objects": 20.83,
+      "ns": 850.97
+     },
+     "reactions": {
+      "alloc_bytes": 878.7,
+      "allocs": 15.8,
+      "kept_bytes": 985.06,
+      "kept_objects": 14.61,
+      "ns": 485.98
+     },
+     "zaps": {
+      "alloc_bytes": 5813.74,
+      "allocs": 29.09,
+      "kept_bytes": 2751.83,
+      "kept_objects": 20.07,
+      "ns": 1487.89
+     }
+    }
+   },
+   "rounds": 3,
+   "runtimes": {
+    "jvm": "Homebrew OpenJDK 64-Bit Server VM 21.0.13.0.2, GC G1, -Xmx2g -XX:+UseG1GC --add-modules=jdk.incubator.vector, one JVM per parser, Quartz 2.2.0",
+    "rust": "rustc 1.95.0 (59807616e 2026-04-14), default RUSTFLAGS, release (lto=fat, codegen-units=1)"
+   }
+  },
+  "x86": {
+   "cpu": "Intel(R) Core(TM) i7-6700 CPU @ 3.40GHz",
+   "label": "Linux x86-64 \u00b7 Intel Core i7-6700",
+   "parsers": {
+    "nostr-parse-compact-typed": {
+     "all": {
+      "alloc_bytes": 533.67,
+      "allocs": 1.0,
+      "kept_bytes": 701.67,
+      "kept_objects": 1.0,
+      "ns": 323.7
+     },
+     "dms": {
+      "alloc_bytes": 304.48,
+      "allocs": 1.0,
+      "kept_bytes": 472.48,
+      "kept_objects": 1.0,
+      "ns": 169.73
+     },
+     "giftwraps": {
+      "alloc_bytes": 1360.1,
+      "allocs": 1.0,
+      "kept_bytes": 1528.1,
+      "kept_objects": 1.0,
+      "ns": 295.2
+     },
+     "lists": {
+      "alloc_bytes": 8252.53,
+      "allocs": 1.0,
+      "kept_bytes": 8420.53,
+      "kept_objects": 1.0,
+      "ns": 1497.48
+     },
+     "metadata": {
+      "alloc_bytes": 485.78,
+      "allocs": 1.0,
+      "kept_bytes": 653.78,
+      "kept_objects": 1.0,
+      "ns": 514.26
+     },
+     "notes": {
+      "alloc_bytes": 579.17,
+      "allocs": 1.0,
+      "kept_bytes": 747.17,
+      "kept_objects": 1.0,
+      "ns": 381.13
+     },
+     "reactions": {
+      "alloc_bytes": 230.95,
+      "allocs": 1.0,
+      "kept_bytes": 398.95,
+      "kept_objects": 1.0,
+      "ns": 207.26
+     },
+     "zaps": {
+      "alloc_bytes": 1741.84,
+      "allocs": 1.0,
+      "kept_bytes": 1909.84,
+      "kept_objects": 1.0,
+      "ns": 832.28
+     }
+    },
+    "nostr-parse-nostr-typed": {
+     "all": {
+      "alloc_bytes": 723.66,
+      "allocs": 11.05,
+      "kept_bytes": 915.66,
+      "kept_objects": 11.05,
+      "ns": 554.47
+     },
+     "dms": {
+      "alloc_bytes": 381.1,
+      "allocs": 5.83,
+      "kept_bytes": 573.1,
+      "kept_objects": 5.83,
+      "ns": 281.52
+     },
+     "giftwraps": {
+      "alloc_bytes": 1435.25,
+      "allocs": 5.76,
+      "kept_bytes": 1627.25,
+      "kept_objects": 5.76,
+      "ns": 391.51
+     },
+     "lists": {
+      "alloc_bytes": 9773.03,
+      "allocs": 77.8,
+      "kept_bytes": 9965.03,
+      "kept_objects": 77.8,
+      "ns": 3963.39
+     },
+     "metadata": {
+      "alloc_bytes": 507.95,
+      "allocs": 2.4,
+      "kept_bytes": 699.95,
+      "kept_objects": 2.4,
+      "ns": 568.66
+     },
+     "notes": {
+      "alloc_bytes": 915.49,
+      "allocs": 17.83,
+      "kept_bytes": 1107.49,
+      "kept_objects": 17.83,
+      "ns": 753.11
+     },
+     "reactions": {
+      "alloc_bytes": 427.96,
+      "allocs": 11.65,
+      "kept_bytes": 619.96,
+      "kept_objects": 11.65,
+      "ns": 398.23
+     },
+     "zaps": {
+      "alloc_bytes": 2062.53,
+      "allocs": 17.07,
+      "kept_bytes": 2254.53,
+      "kept_objects": 17.07,
+      "ns": 1072.03
+     }
+    },
+    "nostr-parse-typed": {
+     "all": {
+      "alloc_bytes": 723.66,
+      "allocs": 11.05,
+      "kept_bytes": 915.66,
+      "kept_objects": 11.05,
+      "ns": 515.35
+     },
+     "dms": {
+      "alloc_bytes": 381.1,
+      "allocs": 5.83,
+      "kept_bytes": 573.1,
+      "kept_objects": 5.83,
+      "ns": 247.21
+     },
+     "giftwraps": {
+      "alloc_bytes": 1435.25,
+      "allocs": 5.76,
+      "kept_bytes": 1627.25,
+      "kept_objects": 5.76,
+      "ns": 358.94
+     },
+     "lists": {
+      "alloc_bytes": 9773.03,
+      "allocs": 77.8,
+      "kept_bytes": 9965.03,
+      "kept_objects": 77.8,
+      "ns": 3878.5
+     },
+     "metadata": {
+      "alloc_bytes": 507.95,
+      "allocs": 2.4,
+      "kept_bytes": 699.95,
+      "kept_objects": 2.4,
+      "ns": 544.32
+     },
+     "notes": {
+      "alloc_bytes": 915.49,
+      "allocs": 17.83,
+      "kept_bytes": 1107.49,
+      "kept_objects": 17.83,
+      "ns": 710.87
+     },
+     "reactions": {
+      "alloc_bytes": 427.96,
+      "allocs": 11.65,
+      "kept_bytes": 619.96,
+      "kept_objects": 11.65,
+      "ns": 364.77
+     },
+     "zaps": {
+      "alloc_bytes": 2062.53,
+      "allocs": 17.07,
+      "kept_bytes": 2254.53,
+      "kept_objects": 17.07,
+      "ns": 1034.11
+     }
+    },
+    "nostr-typed": {
+     "all": {
+      "alloc_bytes": 1686.55,
+      "allocs": 16.31,
+      "kept_bytes": 1087.25,
+      "kept_objects": 11.05,
+      "ns": 1524.69
+     },
+     "dms": {
+      "alloc_bytes": 776.42,
+      "allocs": 8.85,
+      "kept_bytes": 706.01,
+      "kept_objects": 5.83,
+      "ns": 792.62
+     },
+     "giftwraps": {
+      "alloc_bytes": 2356.51,
+      "allocs": 9.19,
+      "kept_bytes": 1746.85,
+      "kept_objects": 5.76,
+      "ns": 1044.64
+     },
+     "lists": {
+      "alloc_bytes": 13193.65,
+      "allocs": 83.69,
+      "kept_bytes": 11457.23,
+      "kept_objects": 77.8,
+      "ns": 7956.33
+     },
+     "metadata": {
+      "alloc_bytes": 2126.26,
+      "allocs": 11.08,
+      "kept_bytes": 734.96,
+      "kept_objects": 2.4,
+      "ns": 1908.76
+     },
+     "notes": {
+      "alloc_bytes": 1999.05,
+      "allocs": 23.4,
+      "kept_bytes": 1326.86,
+      "kept_objects": 17.83,
+      "ns": 1855.82
+     },
+     "reactions": {
+      "alloc_bytes": 902.53,
+      "allocs": 16.07,
+      "kept_bytes": 789.82,
+      "kept_objects": 11.65,
+      "ns": 1066.3
+     },
+     "zaps": {
+      "alloc_bytes": 5771.77,
+      "allocs": 27.17,
+      "kept_bytes": 2551.83,
+      "kept_objects": 17.07,
+      "ns": 2827.01
+     }
+    },
+    "quartz-kite": {
+     "all": {
+      "alloc_bytes": 1321.41,
+      "allocs": 21.34,
+      "kept_bytes": 1288.46,
+      "kept_objects": 21.35,
+      "ns": 874.95
+     },
+     "dms": {
+      "alloc_bytes": 863.77,
+      "allocs": 13.94,
+      "kept_bytes": 865.0,
+      "kept_objects": 13.94,
+      "ns": 420.92
+     },
+     "giftwraps": {
+      "alloc_bytes": 1928.29,
+      "allocs": 14.3,
+      "kept_bytes": 1949.03,
+      "kept_objects": 14.31,
+      "ns": 563.96
+     },
+     "lists": {
+      "alloc_bytes": 10157.2,
+      "allocs": 86.8,
+      "kept_bytes": 10157.2,
+      "kept_objects": 86.8,
+      "ns": 3205.95
+     },
+     "metadata": {
+      "alloc_bytes": 1455.79,
+      "allocs": 11.47,
+      "kept_bytes": 1216.45,
+      "kept_objects": 10.99,
+      "ns": 1696.9
+     },
+     "notes": {
+      "alloc_bytes": 1573.06,
+      "allocs": 28.63,
+      "kept_bytes": 1512.88,
+      "kept_objects": 28.27,
+      "ns": 1067.96
+     },
+     "reactions": {
+      "alloc_bytes": 906.12,
+      "allocs": 20.17,
+      "kept_bytes": 902.27,
+      "kept_objects": 20.16,
+      "ns": 582.85
+     },
+     "zaps": {
+      "alloc_bytes": 2757.43,
+      "allocs": 31.65,
+      "kept_bytes": 2761.33,
+      "kept_objects": 33.65,
+      "ns": 2135.47
+     }
+    },
+    "serde_json-typed": {
+     "all": {
+      "alloc_bytes": 1643.64,
+      "allocs": 15.41,
+      "kept_bytes": 1280.9,
+      "kept_objects": 14.01,
+      "ns": 1099.89
+     },
+     "dms": {
+      "alloc_bytes": 776.42,
+      "allocs": 8.85,
+      "kept_bytes": 906.01,
+      "kept_objects": 8.83,
+      "ns": 549.02
+     },
+     "giftwraps": {
+      "alloc_bytes": 2356.51,
+      "allocs": 9.2,
+      "kept_bytes": 1946.85,
+      "kept_objects": 8.76,
+      "ns": 768.44
+     },
+     "lists": {
+      "alloc_bytes": 13193.65,
+      "allocs": 83.74,
+      "kept_bytes": 11657.23,
+      "kept_objects": 80.8,
+      "ns": 6728.88
+     },
+     "metadata": {
+      "alloc_bytes": 2126.26,
+      "allocs": 11.09,
+      "kept_bytes": 934.96,
+      "kept_objects": 5.4,
+      "ns": 1565.32
+     },
+     "notes": {
+      "alloc_bytes": 1998.32,
+      "allocs": 23.39,
+      "kept_bytes": 1526.75,
+      "kept_objects": 20.83,
+      "ns": 1394.07
+     },
+     "reactions": {
+      "alloc_bytes": 868.27,
+      "allocs": 15.28,
+      "kept_bytes": 985.06,
+      "kept_objects": 14.61,
+      "ns": 747.77
+     },
+     "zaps": {
+      "alloc_bytes": 5771.77,
+      "allocs": 27.19,
+      "kept_bytes": 2751.83,
+      "kept_objects": 20.07,
+      "ns": 2463.35
+     }
+    },
+    "simd_json-typed": {
+     "all": {
+      "alloc_bytes": 2705.46,
+      "allocs": 15.25,
+      "kept_bytes": 1109.3,
+      "kept_objects": 14.01,
+      "ns": 1062.14
+     },
+     "dms": {
+      "alloc_bytes": 1594.19,
+      "allocs": 9.87,
+      "kept_bytes": 773.1,
+      "kept_objects": 8.83,
+      "ns": 636.67
+     },
+     "giftwraps": {
+      "alloc_bytes": 2600.93,
+      "allocs": 9.78,
+      "kept_bytes": 1827.25,
+      "kept_objects": 8.76,
+      "ns": 883.08
+     },
+     "lists": {
+      "alloc_bytes": 17719.83,
+      "allocs": 82.18,
+      "kept_bytes": 10165.03,
+      "kept_objects": 80.8,
+      "ns": 7369.66
+     },
+     "metadata": {
+      "alloc_bytes": 1804.9,
+      "allocs": 6.59,
+      "kept_bytes": 899.95,
+      "kept_objects": 5.4,
+      "ns": 886.01
+     },
+     "notes": {
+      "alloc_bytes": 3708.29,
+      "allocs": 22.23,
+      "kept_bytes": 1307.38,
+      "kept_objects": 20.83,
+      "ns": 1453.52
+     },
+     "reactions": {
+      "alloc_bytes": 2289.15,
+      "allocs": 15.78,
+      "kept_bytes": 815.2,
+      "kept_objects": 14.61,
+      "ns": 832.9
+     },
+     "zaps": {
+      "alloc_bytes": 4206.26,
+      "allocs": 21.23,
+      "kept_bytes": 2454.53,
+      "kept_objects": 20.07,
+      "ns": 1770.88
+     }
+    },
+    "simdjson_rust-typed": {
+     "all": {
+      "alloc_bytes": 973.3,
+      "allocs": 14.01,
+      "kept_bytes": 1109.3,
+      "kept_objects": 14.01,
+      "ns": 1182.6
+     },
+     "dms": {
+      "alloc_bytes": 637.1,
+      "allocs": 8.83,
+      "kept_bytes": 773.1,
+      "kept_objects": 8.83,
+      "ns": 718.42
+     },
+     "giftwraps": {
+      "alloc_bytes": 1691.25,
+      "allocs": 8.76,
+      "kept_bytes": 1827.25,
+      "kept_objects": 8.76,
+      "ns": 948.04
+     },
+     "lists": {
+      "alloc_bytes": 10029.03,
+      "allocs": 80.8,
+      "kept_bytes": 10165.03,
+      "kept_objects": 80.8,
+      "ns": 7495.54
+     },
+     "metadata": {
+      "alloc_bytes": 763.95,
+      "allocs": 5.4,
+      "kept_bytes": 899.95,
+      "kept_objects": 5.4,
+      "ns": 1060.65
+     },
+     "notes": {
+      "alloc_bytes": 1171.38,
+      "allocs": 20.83,
+      "kept_bytes": 1307.38,
+      "kept_objects": 20.83,
+      "ns": 1556.16
+     },
+     "reactions": {
+      "alloc_bytes": 679.2,
+      "allocs": 14.61,
+      "kept_bytes": 815.2,
+      "kept_objects": 14.61,
+      "ns": 889.01
+     },
+     "zaps": {
+      "alloc_bytes": 2318.53,
+      "allocs": 20.07,
+      "kept_bytes": 2454.53,
+      "kept_objects": 20.07,
+      "ns": 1806.84
+     }
+    },
+    "sonic_rs-typed": {
+     "all": {
+      "alloc_bytes": 1677.16,
+      "allocs": 15.67,
+      "kept_bytes": 1280.9,
+      "kept_objects": 14.01,
+      "ns": 991.14
+     },
+     "dms": {
+      "alloc_bytes": 776.42,
+      "allocs": 8.85,
+      "kept_bytes": 906.01,
+      "kept_objects": 8.83,
+      "ns": 487.94
+     },
+     "giftwraps": {
+      "alloc_bytes": 2464.85,
+      "allocs": 9.97,
+      "kept_bytes": 1946.85,
+      "kept_objects": 8.76,
+      "ns": 679.94
+     },
+     "lists": {
+      "alloc_bytes": 13027.68,
+      "allocs": 83.66,
+      "kept_bytes": 11657.23,
+      "kept_objects": 80.8,
+      "ns": 6046.83
+     },
+     "metadata": {
+      "alloc_bytes": 2216.74,
+      "allocs": 11.6,
+      "kept_bytes": 934.96,
+      "kept_objects": 5.4,
+      "ns": 1167.16
+     },
+     "notes": {
+      "alloc_bytes": 2083.38,
+      "allocs": 23.77,
+      "kept_bytes": 1526.75,
+      "kept_objects": 20.83,
+      "ns": 1335.98
+     },
+     "reactions": {
+      "alloc_bytes": 886.93,
+      "allocs": 15.78,
+      "kept_bytes": 985.06,
+      "kept_objects": 14.61,
+      "ns": 718.74
+     },
+     "zaps": {
+      "alloc_bytes": 5789.78,
+      "allocs": 28.08,
+      "kept_bytes": 2751.83,
+      "kept_objects": 20.07,
+      "ns": 2092.71
+     }
+    }
+   },
+   "rounds": 3,
+   "runtimes": {
+    "jvm": "Eclipse Adoptium OpenJDK 64-Bit Server VM 21.0.13+9-LTS, GC G1, -Xmx2g -XX:+UseG1GC --add-modules=jdk.incubator.vector, one JVM per parser, Quartz 2.2.0",
+    "rust": "rustc 1.98.0 (88d9e12ae 2026-08-18), -C target-cpu=native, release (lto=fat, codegen-units=1)"
+   }
+  }
+ }
+}
