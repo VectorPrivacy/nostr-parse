@@ -3,6 +3,10 @@
 //! the same NIP-01 rules, must agree on accepting or refusing each input and on
 //! the event read. A disagreement is shrunk to a small input and reported.
 //!
+//! The in-place reader agrees too, by its own rules: it reads the event at the
+//! start of its input (so a valid event followed by more is read), and it
+//! decodes no string (so a lone surrogate escape passes).
+//!
 //! A short run comes with `cargo test`; a long one:
 //!
 //!   FUZZ_SECS=600 cargo test --release --test fuzz -- --ignored --nocapture
@@ -121,7 +125,73 @@ fn disagreement(p: &mut Parser, json: &str) -> Option<String> {
             }
         }
     }
-    None
+    spans_disagreement(p, json, &want)
+}
+
+/// What `parse_spans` got wrong about one input, if anything.
+fn spans_disagreement(p: &mut Parser, json: &str, want: &Option<Event>) -> Option<String> {
+    match (want, p.parse_spans(json)) {
+        (Some(ev), Ok(sp)) => {
+            let tags: Option<Vec<Vec<String>>> = sp.tags().map(|t| t.iter().map(decoded).collect()).collect();
+            let same = sp.id == ev.id
+                && sp.pubkey == ev.pubkey
+                && sp.created_at == ev.created_at
+                && sp.kind == ev.kind
+                && sp.sig == ev.sig
+                && decoded(sp.content).as_deref() == Some(ev.content.as_str())
+                && tags.as_ref() == Some(&ev.tags)
+                && sp.end == json.trim_end_matches([' ', '\n', '\r', '\t']).len();
+            (!same).then(|| format!("EventSpans read it differently (end {})", sp.end))
+        }
+        (Some(_), Err(e)) => Some(format!("EventSpans refused what serde_json accepts: {e}")),
+        (None, Ok(sp)) => {
+            let prefix = &json[..sp.end];
+            if reference(prefix).is_some() || has_lone_surrogate(prefix) {
+                None
+            } else {
+                Some(format!("EventSpans accepted what serde_json refuses, through byte {}", sp.end))
+            }
+        }
+        (None, Err(_)) => None,
+    }
+}
+
+/// A string as written, unescaped by serde_json.
+fn decoded(r: nostr_parse::RawStr<'_>) -> Option<String> {
+    let s = std::str::from_utf8(r.bytes).ok()?;
+    if !r.escaped {
+        return Some(s.to_owned());
+    }
+    serde_json::from_str(&format!("\"{s}\"")).ok()
+}
+
+/// Whether `s` has a `\u` escape for half of a surrogate pair, alone.
+fn has_lone_surrogate(s: &str) -> bool {
+    let b = s.as_bytes();
+    let unit = |i: usize| b.get(i + 2..i + 6).and_then(|h| u16::from_str_radix(std::str::from_utf8(h).ok()?, 16).ok());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] != b'\\' {
+            i += 1;
+            continue;
+        }
+        if b.get(i + 1) != Some(&b'u') {
+            i += 2;
+            continue;
+        }
+        match unit(i) {
+            Some(0xD800..=0xDBFF) => {
+                let low = b.get(i + 6..i + 8) == Some(&b"\\u"[..]) && unit(i + 6).is_some_and(|l| (0xDC00..=0xDFFF).contains(&l));
+                if !low {
+                    return true;
+                }
+                i += 12;
+            }
+            Some(0xDC00..=0xDFFF) => return true,
+            _ => i += 6,
+        }
+    }
+    false
 }
 
 // ── inputs ──────────────────────────────────────────────────────────────────

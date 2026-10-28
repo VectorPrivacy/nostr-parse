@@ -15,6 +15,10 @@
 //! other Nostr libraries hold (rust-nostr's `Tag` is that list); [`CompactEvent`]
 //! keeps its content, every tag's text and their index in one heap block, so an
 //! event costs one allocation however many tags it has.
+//!
+//! And one read in place, for relays: [`Parser::parse_spans`] decodes id, pubkey
+//! and sig and leaves every string as a [`RawStr`] of the input, as written,
+//! with nothing unescaped or allocated.
 
 mod simd;
 
@@ -242,6 +246,7 @@ pub fn parse_compact(json: &str) -> Result<CompactEvent> {
 pub struct Parser {
     lists: Lists,
     packed: Packed,
+    spans: Spans,
     esc: Vec<u8>,
 }
 
@@ -267,6 +272,93 @@ struct Packed {
     content: Vec<u8>,
 }
 
+/// An [`EventSpans`] in the making: where each string is in the input.
+#[derive(Default)]
+struct Spans {
+    fields: Vec<Span>,
+    tag_ends: Vec<u32>,
+    content: Span,
+}
+
+/// A string's place in the input, quotes excluded.
+#[derive(Clone, Copy, Default)]
+struct Span {
+    start: u32,
+    end: u32,
+    escaped: bool,
+}
+
+impl Span {
+    fn of(self, input: &[u8]) -> RawStr<'_> {
+        RawStr { bytes: &input[self.start as usize..self.end as usize], escaped: self.escaped }
+    }
+}
+
+/// A JSON string as written: the bytes between its quotes, escapes untouched.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RawStr<'a> {
+    pub bytes: &'a [u8],
+    /// It contains at least one backslash escape.
+    pub escaped: bool,
+}
+
+/// One event read in place by [`Parser::parse_spans`]: id, pubkey and sig
+/// decoded, every string a [`RawStr`] of the input.
+pub struct EventSpans<'p, 'a> {
+    pub id: [u8; 32],
+    pub pubkey: [u8; 32],
+    pub created_at: u64,
+    pub kind: u16,
+    /// `None` for an unsigned event, whose sig is `""`.
+    pub sig: Option<[u8; 64]>,
+    pub content: RawStr<'a>,
+    /// How many bytes of the input the event took, through its closing brace.
+    pub end: usize,
+    /// Valid JSON that readers can disagree on: a key, or the id, pubkey or sig,
+    /// written with escapes, or another field's value nested more than 32 deep.
+    /// A reader that must answer exactly as another one does can defer to it.
+    pub unusual: bool,
+    input: &'a [u8],
+    fields: &'p [Span],
+    tag_ends: &'p [u32],
+}
+
+impl<'p, 'a> EventSpans<'p, 'a> {
+    pub fn tags(&self) -> impl ExactSizeIterator<Item = SpanTag<'p, 'a>> + use<'p, 'a> {
+        let (fields, ends, input) = (self.fields, self.tag_ends, self.input);
+        (0..ends.len()).map(move |i| {
+            let start = if i == 0 { 0 } else { ends[i - 1] as usize };
+            SpanTag { fields: &fields[start..ends[i] as usize], input }
+        })
+    }
+}
+
+/// One tag of an [`EventSpans`]: its fields as written.
+#[derive(Clone, Copy)]
+pub struct SpanTag<'p, 'a> {
+    fields: &'p [Span],
+    input: &'a [u8],
+}
+
+impl<'p, 'a> SpanTag<'p, 'a> {
+    pub fn len(&self) -> usize {
+        self.fields.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.fields.is_empty()
+    }
+
+    pub fn get(&self, j: usize) -> Option<RawStr<'a>> {
+        self.fields.get(j).map(|f| f.of(self.input))
+    }
+
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = RawStr<'a>> + use<'p, 'a> {
+        let input = self.input;
+        self.fields.iter().map(move |f| f.of(input))
+    }
+}
+
 /// What a parse reads `tags` and `content` into, and builds the event from, so
 /// one parse serves both event shapes.
 trait Build {
@@ -285,6 +377,9 @@ struct Head {
     created_at: u64,
     kind: u16,
     sig: Option<[u8; 64]>,
+    /// Bytes read, through the closing brace.
+    end: usize,
+    unusual: bool,
 }
 
 impl Build for Lists {
@@ -347,6 +442,23 @@ impl Build for Packed {
     }
 }
 
+impl Build for Spans {
+    type Event = Head;
+    #[inline(always)]
+    fn tags(&mut self, c: &mut Cur<'_>) -> Result<()> {
+        self.read(c)
+    }
+    #[inline(always)]
+    fn content(&mut self, c: &mut Cur<'_>) -> Result<()> {
+        self.content = c.raw_string()?;
+        Ok(())
+    }
+    #[inline(always)]
+    fn finish(&mut self, h: Head, _: &[u8]) -> Result<Head> {
+        Ok(h)
+    }
+}
+
 const ID: u8 = 1;
 const PUBKEY: u8 = 2;
 const CREATED_AT: u8 = 4;
@@ -362,19 +474,46 @@ impl Parser {
     }
 
     pub fn parse(&mut self, json: &str) -> Result<Event> {
-        parse_with(&mut self.lists, &mut self.esc, json)
+        parse_with::<_, true>(&mut self.lists, &mut self.esc, json)
     }
 
     pub fn parse_compact(&mut self, json: &str) -> Result<CompactEvent> {
-        parse_with(&mut self.packed, &mut self.esc, json)
+        parse_with::<_, true>(&mut self.packed, &mut self.esc, json)
+    }
+
+    /// Reads the event at the start of `json` in place: anything may follow it
+    /// (inside a relay message, say), and [`EventSpans::end`] says where it
+    /// stopped. Strings are checked against JSON's grammar but not decoded, so
+    /// one with a lone surrogate escape, which is valid JSON, is accepted here.
+    pub fn parse_spans<'p, 'a>(&'p mut self, json: &'a str) -> Result<EventSpans<'p, 'a>> {
+        if u32::try_from(json.len()).is_err() {
+            return Err(Error { msg: "event too large", pos: 0 });
+        }
+        let h = parse_with::<_, false>(&mut self.spans, &mut self.esc, json)?;
+        let (s, input) = (&self.spans, json.as_bytes());
+        Ok(EventSpans {
+            id: h.id,
+            pubkey: h.pubkey,
+            created_at: h.created_at,
+            kind: h.kind,
+            sig: h.sig,
+            content: s.content.of(input),
+            end: h.end,
+            unusual: h.unusual,
+            input,
+            fields: &s.fields,
+            tag_ends: &s.tag_ends,
+        })
     }
 }
 
 #[inline(always)]
-fn parse_with<B: Build>(build: &mut B, esc: &mut Vec<u8>, json: &str) -> Result<B::Event> {
-    match canonical(build, esc, json) {
+/// `WHOLE`: the event must be all of `json`; otherwise it is the start of it,
+/// and `Head::end` and `Head::unusual` are filled in.
+fn parse_with<B: Build, const WHOLE: bool>(build: &mut B, esc: &mut Vec<u8>, json: &str) -> Result<B::Event> {
+    match canonical::<B, WHOLE>(build, esc, json) {
         Some(ev) => Ok(ev),
-        None => general(build, esc, json),
+        None => general::<B, WHOLE>(build, esc, json),
     }
 }
 
@@ -383,8 +522,8 @@ fn parse_with<B: Build>(build: &mut B, esc: &mut Vec<u8>, json: &str) -> Result<
 /// order, whitespace, an extra key, an error) is left to [`general`], which
 /// reads any layout and names the error.
 #[inline(always)]
-fn canonical<B: Build>(build: &mut B, esc: &mut Vec<u8>, json: &str) -> Option<B::Event> {
-    let mut c = Cur { s: json, b: json.as_bytes(), p: 0, esc };
+fn canonical<B: Build, const WHOLE: bool>(build: &mut B, esc: &mut Vec<u8>, json: &str) -> Option<B::Event> {
+    let mut c = Cur { s: json, b: json.as_bytes(), p: 0, esc, unusual: false };
     let mut h = Head::default();
     c.lit(b"{\"id\":")?;
     c.hex(&mut h.id, "").ok()?;
@@ -401,14 +540,18 @@ fn canonical<B: Build>(build: &mut B, esc: &mut Vec<u8>, json: &str) -> Option<B
     c.lit(b",\"sig\":")?;
     h.sig = c.sig().ok()?;
     c.lit(b"}")?;
-    if c.p != c.b.len() {
-        return None;
+    if WHOLE {
+        if c.p != c.b.len() {
+            return None;
+        }
+    } else {
+        (h.end, h.unusual) = (c.p, c.unusual);
     }
     build.finish(h, c.b).ok()
 }
 
-fn general<B: Build>(build: &mut B, esc: &mut Vec<u8>, json: &str) -> Result<B::Event> {
-    let mut c = Cur { s: json, b: json.as_bytes(), p: 0, esc };
+fn general<B: Build, const WHOLE: bool>(build: &mut B, esc: &mut Vec<u8>, json: &str) -> Result<B::Event> {
+    let mut c = Cur { s: json, b: json.as_bytes(), p: 0, esc, unusual: false };
     let mut h = Head::default();
     let mut seen = 0u8;
     c.ws();
@@ -473,9 +616,13 @@ fn general<B: Build>(build: &mut B, esc: &mut Vec<u8>, json: &str) -> Result<B::
     if seen != ALL {
         return c.err(missing(seen));
     }
-    c.ws();
-    if c.p != c.b.len() {
-        return c.err("trailing characters");
+    if WHOLE {
+        c.ws();
+        if c.p != c.b.len() {
+            return c.err("trailing characters");
+        }
+    } else {
+        (h.end, h.unusual) = (c.p, c.unusual);
     }
     build.finish(h, c.b)
 }
@@ -567,6 +714,49 @@ impl Packed {
     }
 }
 
+impl Spans {
+    /// `[["e", "…"], …]`: every field's place in `self.fields`, each tag's end
+    /// in `self.tag_ends`.
+    fn read(&mut self, c: &mut Cur<'_>) -> Result<()> {
+        self.fields.clear();
+        self.tag_ends.clear();
+        c.expect(b'[', "tags must be an array")?;
+        c.ws();
+        if c.peek() == Some(b']') {
+            c.p += 1;
+            return Ok(());
+        }
+        loop {
+            c.ws();
+            c.expect(b'[', "a tag must be an array")?;
+            c.ws();
+            if c.peek() == Some(b']') {
+                c.p += 1;
+            } else {
+                loop {
+                    c.ws();
+                    let field = c.raw_string()?;
+                    self.fields.push(field);
+                    c.ws();
+                    match c.next() {
+                        Some(b',') => {}
+                        Some(b']') => break,
+                        _ => return c.err_back("expected ',' or ']' in a tag"),
+                    }
+                }
+            }
+            self.tag_ends.push(self.fields.len() as u32);
+            c.ws();
+            match c.next() {
+                Some(b',') => {}
+                Some(b']') => break,
+                _ => return c.err_back("expected ',' or ']' after a tag"),
+            }
+        }
+        Ok(())
+    }
+}
+
 fn missing(seen: u8) -> &'static str {
     match !seen & ALL {
         m if m & ID != 0 => "missing id",
@@ -598,6 +788,8 @@ struct Cur<'a> {
     p: usize,
     /// The parser's buffer for unescaping.
     esc: &'a mut Vec<u8>,
+    /// See [`EventSpans::unusual`].
+    unusual: bool,
 }
 
 impl Cur<'_> {
@@ -653,6 +845,7 @@ impl Cur<'_> {
         let end = simd::find_special(self.b, start);
         if self.b.get(end) != Some(&b'"') {
             // An escaped key (or a broken one): unescape it and compare.
+            self.unusual = true;
             self.p -= 1;
             let k = self.string()?;
             return Ok(key_of(k.as_bytes()));
@@ -700,7 +893,10 @@ impl Cur<'_> {
     fn escaped_hex(&mut self, out: &mut [u8], msg: &'static str) -> Result<()> {
         let p = self.p;
         match self.string() {
-            Ok(s) if s.len() == out.len() * 2 && simd::decode_hex(s.as_bytes(), out) => Ok(()),
+            Ok(s) if s.len() == out.len() * 2 && simd::decode_hex(s.as_bytes(), out) => {
+                self.unusual = true;
+                Ok(())
+            }
             _ => {
                 self.p = p;
                 self.err(msg)
@@ -771,6 +967,22 @@ impl Cur<'_> {
         Ok(owned(unsafe { std::str::from_utf8_unchecked(self.esc) }))
     }
 
+    /// A string's place in the input, checked but not unescaped: nothing is
+    /// decoded, so a lone surrogate escape (valid JSON) passes.
+    #[inline(always)]
+    fn raw_string(&mut self) -> Result<Span> {
+        self.expect(b'"', "expected a string")?;
+        let start = self.p;
+        let end = simd::find_special(self.b, start);
+        if self.b.get(end) == Some(&b'"') {
+            self.p = end + 1;
+            return Ok(Span { start: start as u32, end: end as u32, escaped: false });
+        }
+        self.p = start - 1;
+        self.skip_string()?;
+        Ok(Span { start: start as u32, end: (self.p - 1) as u32, escaped: true })
+    }
+
     /// A string, unescaped, appended to `out`.
     #[inline(always)]
     fn string_into(&mut self, out: &mut Vec<u8>) -> Result<()> {
@@ -827,6 +1039,7 @@ impl Cur<'_> {
                         self.p += 1;
                     } else {
                         open.push(b'[');
+                        self.unusual |= open.len() > 32;
                         continue;
                     }
                 }
@@ -837,6 +1050,7 @@ impl Cur<'_> {
                         self.p += 1;
                     } else {
                         open.push(b'{');
+                        self.unusual |= open.len() > 32;
                         self.member_key()?;
                         continue;
                     }

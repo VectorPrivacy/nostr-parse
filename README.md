@@ -83,6 +83,28 @@ fn to_nostr(e: nostr_parse::Event) -> Option<Event> {
 Parsing and converting this way is still 2.4–2.8× faster than `Event::from_json` (the
 "nostr-parse → rust-nostr" row below).
 
+### Reading in place
+
+A relay stores events rather than decoding them. `Parser::parse_spans` reads an event
+where it sits:
+- id, pubkey and sig are decoded to bytes;
+- every string is a `RawStr`, the bytes between its quotes with escapes untouched, plus
+  whether it has any;
+- nothing is allocated or unescaped.
+
+```rust
+let ev = parser.parse_spans(text)?; // the event may be followed by more, as in ["EVENT", {...}]
+let rest = &text[ev.end..];
+for tag in ev.tags() {
+    if tag.get(0).is_some_and(|name| name.bytes == b"expiration") { /* ... */ }
+}
+```
+
+Strings are checked against JSON's grammar but not decoded, so a lone surrogate escape
+(valid JSON, and what a client that cut an emoji in half sends) is accepted here.
+`unusual` flags spellings that readers can disagree on: escaped keys or hex, and deeply
+nested extra fields. A reader that has to match another one exactly can defer to it.
+
 ## Benchmarks
 
 Measured with [nostrJsonBench](https://github.com/vitorpamplona/nostrJsonBench), Vitor Pamplona's
