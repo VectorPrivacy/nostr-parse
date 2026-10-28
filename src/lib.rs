@@ -56,6 +56,13 @@ pub struct CompactEvent {
     body: Box<[u8]>,
 }
 
+/// `u32`s as their bytes in memory, copied into a body as one block.
+#[inline(always)]
+fn bytes_of(v: &[u32]) -> &[u8] {
+    // SAFETY: every byte of a u32 is a valid u8, and a u8 needs no alignment.
+    unsafe { std::slice::from_raw_parts(v.as_ptr().cast::<u8>(), std::mem::size_of_val(v)) }
+}
+
 /// The `k`th `u32` of a body's index.
 #[inline(always)]
 fn word(body: &[u8], k: usize) -> usize {
@@ -322,9 +329,8 @@ impl Build for Packed {
             return Err(Error { msg: "event too large", pos: 0 });
         }
         let mut body = Vec::with_capacity(4 * (tags + fields) + content.len() + self.text.len());
-        for n in self.tag_ends.iter().chain(&self.fields) {
-            body.extend_from_slice(&n.to_ne_bytes());
-        }
+        body.extend_from_slice(bytes_of(&self.tag_ends));
+        body.extend_from_slice(bytes_of(&self.fields));
         body.extend_from_slice(content);
         body.extend_from_slice(&self.text);
         Ok(CompactEvent {
