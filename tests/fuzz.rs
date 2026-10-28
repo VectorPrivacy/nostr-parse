@@ -7,6 +7,12 @@
 //! start of its input (so a valid event followed by more is read), and it
 //! decodes no string (so a lone surrogate escape passes).
 //!
+//! The unsigned reader is held to rust-nostr's own `UnsignedEvent::from_json`:
+//! it may refuse what rust-nostr reads (uppercase hex, a bech32 key), never
+//! the reverse, and never reads an event differently. A third of the events
+//! generated are rumor-shaped for it: no sig or one of any type, an id missing
+//! or null.
+//!
 //! A short run comes with `cargo test`; a long one:
 //!
 //!   FUZZ_SECS=600 cargo test --release --test fuzz -- --ignored --nocapture
@@ -125,7 +131,32 @@ fn disagreement(p: &mut Parser, json: &str) -> Option<String> {
             }
         }
     }
-    spans_disagreement(p, json, &want)
+    if let Some(why) = spans_disagreement(p, json, &want) {
+        return Some(why);
+    }
+    unsigned_disagreement(p, json)
+}
+
+/// What `parse_unsigned` got wrong, against rust-nostr's reader, if anything.
+fn unsigned_disagreement(p: &mut Parser, json: &str) -> Option<String> {
+    let theirs = nostr::prelude::UnsignedEvent::from_json(json).ok();
+    let ours = p.parse_unsigned(json).ok().and_then(to_nostr_unsigned);
+    match (ours, theirs) {
+        (Some(a), Some(b)) if a == b => None,
+        (Some(a), Some(b)) => Some(format!("UnsignedEvent read it differently: {a:?} vs rust-nostr's {b:?}")),
+        (Some(_), None) => Some("UnsignedEvent accepted what rust-nostr refuses".to_string()),
+        _ => None,
+    }
+}
+
+/// Into rust-nostr's type, as a caller would convert it; `None` where rust-nostr
+/// cannot hold the event (an empty tag).
+fn to_nostr_unsigned(e: nostr_parse::UnsignedEvent) -> Option<nostr::prelude::UnsignedEvent> {
+    use nostr::prelude::{EventId, Kind, PublicKey, Tag, Timestamp};
+    let tags: Vec<Tag> = e.tags.into_iter().map(Tag::parse).collect::<Result<_, _>>().ok()?;
+    let mut ev = nostr::prelude::UnsignedEvent::new(PublicKey::from_byte_array(e.pubkey), Timestamp::from(e.created_at), Kind::from(e.kind), tags, e.content);
+    ev.id = e.id.map(EventId::from_byte_array);
+    Some(ev)
 }
 
 /// What `parse_spans` got wrong about one input, if anything.
@@ -346,6 +377,19 @@ fn event(r: &mut Rng) -> String {
         ("content".into(), string(r, &content)),
         ("sig".into(), string(r, &sig)),
     ];
+    // Rumor-shaped: no sig, or a sig of any type; an id missing or null.
+    if r.chance(3) {
+        match r.below(6) {
+            0..=2 => keys.retain(|(k, _)| k != "sig"),
+            3 => keys[6].1 = r.pick(&["1", "null", "{}", "[]", "true", "\"x\""]).to_string(),
+            _ => {}
+        }
+        match r.below(6) {
+            0 => keys.retain(|(k, _)| k != "id"),
+            1 => keys[0].1 = "null".to_string(),
+            _ => {}
+        }
+    }
     if r.chance(4) {
         for i in (1..keys.len()).rev() {
             let j = r.below(i + 1);
@@ -435,10 +479,11 @@ fn shrink(p: &mut Parser, mut s: String) -> String {
     s
 }
 
-fn run(seed: u64, budget: Duration) -> (u64, u64) {
+/// Inputs tried, events accepted, and unsigned events accepted.
+fn run(seed: u64, budget: Duration) -> (u64, u64, u64) {
     let mut r = Rng(seed | 1);
     let mut p = Parser::new();
-    let (mut n, mut accepted) = (0u64, 0u64);
+    let (mut n, mut accepted, mut unsigned) = (0u64, 0u64, 0u64);
     let end = Instant::now() + budget;
     while Instant::now() < end {
         for _ in 0..256 {
@@ -448,16 +493,18 @@ fn run(seed: u64, budget: Duration) -> (u64, u64) {
                 panic!("seed {seed}, input {n}: {why}\nshrunk to {small:?}\n{}\nfull input: {json:?}", disagreement(&mut p, &small).unwrap());
             }
             accepted += u64::from(reference(&json).is_some());
+            unsigned += u64::from(p.parse_unsigned(&json).is_ok());
             n += 1;
         }
     }
-    (n, accepted)
+    (n, accepted, unsigned)
 }
 
 #[test]
 fn agrees_with_serde_json_briefly() {
-    let (n, ok) = run(0x5eed, Duration::from_secs(3));
+    let (n, ok, unsigned) = run(0x5eed, Duration::from_secs(3));
     assert!(n > 1000 && ok > 0 && ok < n, "{n} inputs, {ok} accepted");
+    assert!(unsigned > ok / 4, "{unsigned} read as unsigned events");
 }
 
 #[test]
@@ -468,11 +515,12 @@ fn agrees_with_serde_json_for_long() {
     let start = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos() as u64 ^ 0x9e37_79b9_7f4a_7c15;
     println!("seeds from {start}");
     let handles: Vec<_> = (0..threads).map(|t| std::thread::spawn(move || run(start.wrapping_add(t.wrapping_mul(0x632b_e59b_d9b4_e019)), Duration::from_secs(secs)))).collect();
-    let (mut n, mut ok) = (0, 0);
+    let (mut n, mut ok, mut unsigned) = (0, 0, 0);
     for h in handles {
-        let (a, b) = h.join().expect("a fuzz thread panicked: see above");
+        let (a, b, c) = h.join().expect("a fuzz thread panicked: see above");
         n += a;
         ok += b;
+        unsigned += c;
     }
-    println!("{n} inputs in {secs} s on {threads} threads, {ok} accepted, no disagreement");
+    println!("{n} inputs in {secs} s on {threads} threads, {ok} accepted, {unsigned} accepted as unsigned, no disagreement");
 }

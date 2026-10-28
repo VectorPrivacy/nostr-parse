@@ -19,6 +19,10 @@
 //! And one read in place, for relays: [`Parser::parse_spans`] decodes id, pubkey
 //! and sig and leaves every string as a [`RawStr`] of the input, as written,
 //! with nothing unescaped or allocated.
+//!
+//! An unsigned event, such as a NIP-59 rumor, is read by
+//! [`Parser::parse_unsigned`] into an [`UnsignedEvent`]: no `sig` needed (one
+//! that is there is ignored, whatever it holds), and the id optional.
 
 mod simd;
 
@@ -37,6 +41,19 @@ pub struct Event {
     pub content: String,
     /// `None` for an unsigned event, whose sig is `""`.
     pub sig: Option<[u8; 64]>,
+}
+
+/// An event with no signature, such as a NIP-59 rumor: what rust-nostr calls an
+/// `UnsignedEvent`, read by the same rules.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct UnsignedEvent {
+    /// `None` when the event has no `id`, or `"id": null`.
+    pub id: Option<[u8; 32]>,
+    pub pubkey: [u8; 32],
+    pub created_at: u64,
+    pub kind: u16,
+    pub tags: Vec<Vec<String>>,
+    pub content: String,
 }
 
 /// A Nostr event whose content and tags live in one heap block: one allocation
@@ -239,6 +256,11 @@ pub fn parse_compact(json: &str) -> Result<CompactEvent> {
     Parser::new().parse_compact(json)
 }
 
+/// Parses one unsigned event, such as a NIP-59 rumor; see [`Parser::parse_unsigned`].
+pub fn parse_unsigned(json: &str) -> Result<UnsignedEvent> {
+    Parser::new().parse_unsigned(json)
+}
+
 /// Reusable scratch space: tags are gathered here and then moved or copied into
 /// exactly the right size, and escaped strings are unescaped here and then copied
 /// out at their size, so nothing the event keeps is ever reallocated.
@@ -380,6 +402,8 @@ struct Head {
     /// Bytes read, through the closing brace.
     end: usize,
     unusual: bool,
+    /// An id was read (an unsigned event may have none, or `null`).
+    has_id: bool,
 }
 
 impl Build for Lists {
@@ -398,6 +422,28 @@ impl Build for Lists {
     fn finish(&mut self, h: Head, _: &[u8]) -> Result<Event> {
         let (tags, content) = (std::mem::take(&mut self.out_tags), std::mem::take(&mut self.out_content));
         Ok(Event { id: h.id, pubkey: h.pubkey, created_at: h.created_at, kind: h.kind, tags, content, sig: h.sig })
+    }
+}
+
+/// An [`UnsignedEvent`] in the making, in the [`Lists`] scratch.
+struct Unsigned<'a>(&'a mut Lists);
+
+impl Build for Unsigned<'_> {
+    type Event = UnsignedEvent;
+    #[inline(always)]
+    fn tags(&mut self, c: &mut Cur<'_>) -> Result<()> {
+        self.0.tags(c)
+    }
+    #[inline(always)]
+    fn content(&mut self, c: &mut Cur<'_>) -> Result<()> {
+        self.0.content(c)
+    }
+    #[inline(always)]
+    fn finish(&mut self, h: Head, _: &[u8]) -> Result<UnsignedEvent> {
+        let l = &mut *self.0;
+        let (tags, content) = (std::mem::take(&mut l.out_tags), std::mem::take(&mut l.out_content));
+        let id = h.has_id.then_some(h.id);
+        Ok(UnsignedEvent { id, pubkey: h.pubkey, created_at: h.created_at, kind: h.kind, tags, content })
     }
 }
 
@@ -474,11 +520,19 @@ impl Parser {
     }
 
     pub fn parse(&mut self, json: &str) -> Result<Event> {
-        parse_with::<_, true>(&mut self.lists, &mut self.esc, json)
+        parse_with::<_, true, true>(&mut self.lists, &mut self.esc, json)
     }
 
     pub fn parse_compact(&mut self, json: &str) -> Result<CompactEvent> {
-        parse_with::<_, true>(&mut self.packed, &mut self.esc, json)
+        parse_with::<_, true, true>(&mut self.packed, &mut self.esc, json)
+    }
+
+    /// An unsigned event, as rust-nostr writes and reads one (a NIP-59 rumor is
+    /// one): `sig` need not be there, and one that is, whatever it holds, is
+    /// skipped like any other unknown key; `id` may be absent or `null`. The
+    /// other fields, and refusing a duplicate key, are as for [`Self::parse`].
+    pub fn parse_unsigned(&mut self, json: &str) -> Result<UnsignedEvent> {
+        parse_with::<_, true, false>(&mut Unsigned(&mut self.lists), &mut self.esc, json)
     }
 
     /// Reads the event at the start of `json` in place: anything may follow it
@@ -489,7 +543,7 @@ impl Parser {
         if u32::try_from(json.len()).is_err() {
             return Err(Error { msg: "event too large", pos: 0 });
         }
-        let h = parse_with::<_, false>(&mut self.spans, &mut self.esc, json)?;
+        let h = parse_with::<_, false, true>(&mut self.spans, &mut self.esc, json)?;
         let (s, input) = (&self.spans, json.as_bytes());
         Ok(EventSpans {
             id: h.id,
@@ -509,11 +563,13 @@ impl Parser {
 
 #[inline(always)]
 /// `WHOLE`: the event must be all of `json`; otherwise it is the start of it,
-/// and `Head::end` and `Head::unusual` are filled in.
-fn parse_with<B: Build, const WHOLE: bool>(build: &mut B, esc: &mut Vec<u8>, json: &str) -> Result<B::Event> {
-    match canonical::<B, WHOLE>(build, esc, json) {
+/// and `Head::end` and `Head::unusual` are filled in. `SIGNED`: the event has a
+/// `sig` and an `id`; otherwise `sig` is skipped like any unknown key and `id`
+/// may be absent or `null`.
+fn parse_with<B: Build, const WHOLE: bool, const SIGNED: bool>(build: &mut B, esc: &mut Vec<u8>, json: &str) -> Result<B::Event> {
+    match canonical::<B, WHOLE, SIGNED>(build, esc, json) {
         Some(ev) => Ok(ev),
-        None => general::<B, WHOLE>(build, esc, json),
+        None => general::<B, WHOLE, SIGNED>(build, esc, json),
     }
 }
 
@@ -522,11 +578,12 @@ fn parse_with<B: Build, const WHOLE: bool>(build: &mut B, esc: &mut Vec<u8>, jso
 /// order, whitespace, an extra key, an error) is left to [`general`], which
 /// reads any layout and names the error.
 #[inline(always)]
-fn canonical<B: Build, const WHOLE: bool>(build: &mut B, esc: &mut Vec<u8>, json: &str) -> Option<B::Event> {
+fn canonical<B: Build, const WHOLE: bool, const SIGNED: bool>(build: &mut B, esc: &mut Vec<u8>, json: &str) -> Option<B::Event> {
     let mut c = Cur { s: json, b: json.as_bytes(), p: 0, esc, unusual: false };
     let mut h = Head::default();
     c.lit(b"{\"id\":")?;
     c.hex(&mut h.id, "").ok()?;
+    h.has_id = true;
     c.lit(b",\"pubkey\":")?;
     c.hex(&mut h.pubkey, "").ok()?;
     c.lit(b",\"created_at\":")?;
@@ -537,8 +594,10 @@ fn canonical<B: Build, const WHOLE: bool>(build: &mut B, esc: &mut Vec<u8>, json
     build.tags(&mut c).ok()?;
     c.lit(b",\"content\":")?;
     build.content(&mut c).ok()?;
-    c.lit(b",\"sig\":")?;
-    h.sig = c.sig().ok()?;
+    if SIGNED {
+        c.lit(b",\"sig\":")?;
+        h.sig = c.sig().ok()?;
+    }
     c.lit(b"}")?;
     if WHOLE {
         if c.p != c.b.len() {
@@ -550,7 +609,7 @@ fn canonical<B: Build, const WHOLE: bool>(build: &mut B, esc: &mut Vec<u8>, json
     build.finish(h, c.b).ok()
 }
 
-fn general<B: Build, const WHOLE: bool>(build: &mut B, esc: &mut Vec<u8>, json: &str) -> Result<B::Event> {
+fn general<B: Build, const WHOLE: bool, const SIGNED: bool>(build: &mut B, esc: &mut Vec<u8>, json: &str) -> Result<B::Event> {
     let mut c = Cur { s: json, b: json.as_bytes(), p: 0, esc, unusual: false };
     let mut h = Head::default();
     let mut seen = 0u8;
@@ -566,7 +625,12 @@ fn general<B: Build, const WHOLE: bool>(build: &mut B, esc: &mut Vec<u8>, json: 
             c.ws();
             let bit = match key {
                 Key::Id => {
-                    c.hex(&mut h.id, "id must be 64 lowercase hex digits")?;
+                    if SIGNED || c.peek() != Some(b'n') {
+                        c.hex(&mut h.id, "id must be 64 lowercase hex digits")?;
+                        h.has_id = true;
+                    } else {
+                        c.literal(b"null")?;
+                    }
                     ID
                 }
                 Key::Pubkey => {
@@ -590,9 +654,13 @@ fn general<B: Build, const WHOLE: bool>(build: &mut B, esc: &mut Vec<u8>, json: 
                     build.content(&mut c)?;
                     CONTENT
                 }
-                Key::Sig => {
+                Key::Sig if SIGNED => {
                     h.sig = c.sig()?;
                     SIG
+                }
+                Key::Sig => {
+                    c.skip()?;
+                    0
                 }
                 Key::Other => {
                     c.skip()?;
@@ -613,6 +681,8 @@ fn general<B: Build, const WHOLE: bool>(build: &mut B, esc: &mut Vec<u8>, json: 
     } else {
         c.p += 1;
     }
+    // An unsigned event needs neither an id nor a sig.
+    let seen = if SIGNED { seen } else { seen | ID | SIG };
     if seen != ALL {
         return c.err(missing(seen));
     }

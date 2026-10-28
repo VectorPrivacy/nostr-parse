@@ -1,10 +1,9 @@
 [package]
 name = "nostr-parse"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2024"
 rust-version = "1.85"
-publish = false
-description = "Parses Nostr events (NIP-01 JSON) into owned structs, fast"
+description = "Fast, strict Nostr event (NIP-01 JSON) parser: owned, one allocation, in place, or unsigned (NIP-59 rumors)"
 license = "MIT"
 readme = "README.md"
 keywords = ["nostr", "json", "parser", "nip-01"]
@@ -17,6 +16,8 @@ exclude = ["bench/"]
 [dev-dependencies]
 serde = "1"
 serde_json = "1"
+# The reference for unsigned events: rust-nostr's own UnsignedEvent::from_json.
+nostr = { version = "=0.45.5", default-features = false, features = ["std"] }
 
 [profile.release]
 lto = "fat"

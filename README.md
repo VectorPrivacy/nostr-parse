@@ -26,11 +26,9 @@
 
 ## Install
 
-Not on crates.io yet:
-
 ```toml
 [dependencies]
-nostr-parse = { git = "https://github.com/VectorPrivacy/nostr-parse" }
+nostr-parse = "0.3"
 ```
 
 ## Use
@@ -105,6 +103,40 @@ Strings are checked against JSON's grammar but not decoded, so a lone surrogate 
 `unusual` flags spellings that readers can disagree on: escaped keys or hex, and deeply
 nested extra fields. A reader that has to match another one exactly can defer to it.
 
+### Unsigned events (NIP-59 rumors)
+
+A rumor has no signature; rust-nostr writes one with no `sig` key at all.
+`Parser::parse_unsigned` reads it into an `UnsignedEvent` by rust-nostr's own rules:
+- a `sig`, whatever it holds, is skipped like any unknown key;
+- `id` may be absent or `null` (then `None`);
+- the other fields, and refusing a duplicate key, are as for a signed event.
+
+The signed readers are unchanged and still refuse an event with no `sig`. Converting into
+rust-nostr's type:
+
+```rust
+use nostr::prelude::*;
+
+fn to_nostr_unsigned(e: nostr_parse::UnsignedEvent) -> Option<UnsignedEvent> {
+    let tags: Vec<Tag> = e.tags.into_iter().map(Tag::parse).collect::<Result<_, _>>().ok()?;
+    let mut ev = UnsignedEvent::new(
+        PublicKey::from_byte_array(e.pubkey),
+        Timestamp::from(e.created_at),
+        Kind::from(e.kind),
+        tags,
+        e.content,
+    );
+    ev.id = e.id.map(EventId::from_byte_array);
+    Some(ev)
+}
+```
+
+It is tested against rust-nostr's `UnsignedEvent::from_json`. Whenever `parse_unsigned`
+accepts an event, rust-nostr reads exactly the same one, and whatever rust-nostr refuses,
+`parse_unsigned` refuses too. A few spellings rust-nostr reads are refused here (uppercase
+hex, bech32 keys); hand those to rust-nostr. A refusal is cheap, since it stops at the
+first wrong field.
+
 ## Benchmarks
 
 Measured with [nostrJsonBench](https://github.com/vitorpamplona/nostrJsonBench), Vitor Pamplona's
@@ -178,6 +210,21 @@ The same runs on macOS, per event over all events:
 The Rust rows count heap allocations, and Kite's row counts JVM objects. Bytes compare across
 the two; object counts only within a runtime.
 
+### NIP-59 rumors
+
+2,000 kind-14 DM rumors as rust-nostr writes them, 549 B on average, a quarter of them
+replies (`cargo run --release --example rumors`). ns per rumor (each run takes the median of
+31 rounds):
+
+| | macOS · M4 Max | Linux x86-64 · i7-6700 |
+|---|---:|---:|
+| rust-nostr `UnsignedEvent::from_json` | 641 | 889 |
+| **`parse_unsigned`** | **221** | **264** |
+| **`parse_unsigned`, into rust-nostr's `UnsignedEvent`** | **230** | **280** |
+| refused, handed back (an uppercase id) | 53 | 104 |
+
+With the conversion, that is 2.8× faster than rust-nostr on macOS and 3.2× on x86-64.
+
 ### Setup
 
 - **Rust:** release builds (fat LTO, one codegen unit). rustc 1.95 with default flags on macOS;
@@ -187,6 +234,8 @@ the two; object counts only within a runtime.
 - **x86-64:** both harnesses were pinned to one core.
 - **Harness:** nostr-parse's rows aren't in upstream nostrJsonBench yet; they are three small
   entries in its Rust harness.
+- **Rumors:** built with rustc 1.85 on macOS and rustc 1.98 on x86-64, both with default
+  flags; each figure is the median of three runs.
 - **Raw data:** `bench/results.json` holds the medians, `bench/summarize.py` builds it from
   nostrJsonBench's output, and `bench/chart.py` and `bench/tables.py` draw the charts and tables
   above.
@@ -221,6 +270,10 @@ byte offset where parsing stopped.
 - **A generation-based fuzzer:** random events in every spelling, edits of them, and arbitrary
   JSON, against a serde_json reader of the same rules. About 52 million inputs, on arm64 and
   x86-64, without a disagreement.
+- **The in-place and unsigned readers** are checked on every input too: the in-place reader
+  against the serde_json reader, the unsigned reader against rust-nostr's own
+  `UnsignedEvent::from_json`. A third of the generated events are rumor-shaped: no sig or a
+  sig of any type, an id missing or `null`.
 
 ```bash
 cargo test --release
